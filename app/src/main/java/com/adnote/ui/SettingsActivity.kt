@@ -2,12 +2,14 @@ package com.adnote.ui
 
 import android.os.Bundle
 import android.widget.Button
+import android.widget.CheckBox
 import android.widget.EditText
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import com.adnote.R
+import com.adnote.pen.DeviceDetector
 import com.adnote.pen.EinkRefresher
 import com.adnote.pen.PenInputFactory
 import com.adnote.sync.SyncSettings
@@ -25,7 +27,10 @@ class SettingsActivity : AppCompatActivity() {
     private lateinit var etRemoteDir: EditText
     private lateinit var btnTestConnection: Button
     private lateinit var btnSaveSettings: Button
+    private lateinit var tvDeviceInfo: TextView
     private lateinit var tvPenStatus: TextView
+    private lateinit var cbStylusOnly: CheckBox
+    private lateinit var cbPreferOnyx: CheckBox
     private lateinit var btnFullRefreshTest: Button
     private lateinit var tvModelStatus: TextView
     private lateinit var btnDownloadModel: Button
@@ -48,18 +53,25 @@ class SettingsActivity : AppCompatActivity() {
         etRemoteDir = findViewById(R.id.etRemoteDir)
         btnTestConnection = findViewById(R.id.btnTestConnection)
         btnSaveSettings = findViewById(R.id.btnSaveSettings)
+        tvDeviceInfo = findViewById(R.id.tvDeviceInfo)
         tvPenStatus = findViewById(R.id.tvPenStatus)
+        cbStylusOnly = findViewById(R.id.cbStylusOnly)
+        cbPreferOnyx = findViewById(R.id.cbPreferOnyx)
         btnFullRefreshTest = findViewById(R.id.btnFullRefreshTest)
         tvModelStatus = findViewById(R.id.tvModelStatus)
         btnDownloadModel = findViewById(R.id.btnDownloadModel)
     }
 
     private fun loadCurrentSettings() {
-        val current = AdNoteApp.instance.syncSettings
+        val app = AdNoteApp.instance
+        val current = app.syncSettings
         etServerUrl.setText(current.serverUrl)
         etUsername.setText(current.username)
         etPassword.setText(current.password)
         etRemoteDir.setText(current.remoteRootDir)
+
+        cbStylusOnly.isChecked = app.stylusOnly
+        cbPreferOnyx.isChecked = app.preferOnyx
     }
 
     private fun getSettingsFromInput(): SyncSettings {
@@ -74,6 +86,16 @@ class SettingsActivity : AppCompatActivity() {
 
     private fun setupListeners() {
         btnBack.setOnClickListener { finish() }
+
+        cbStylusOnly.setOnCheckedChangeListener { _, isChecked ->
+            AdNoteApp.instance.setStylusOnly(isChecked)
+            updatePenStatus()
+        }
+
+        cbPreferOnyx.setOnCheckedChangeListener { _, isChecked ->
+            AdNoteApp.instance.setPreferOnyx(isChecked)
+            updatePenStatus()
+        }
 
         btnSaveSettings.setOnClickListener {
             val settings = getSettingsFromInput()
@@ -113,6 +135,7 @@ class SettingsActivity : AppCompatActivity() {
 
         btnFullRefreshTest.setOnClickListener {
             EinkRefresher.fullRefresh(window.decorView)
+            Toast.makeText(this, "已触发全刷刷新", Toast.LENGTH_SHORT).show()
         }
 
         btnDownloadModel.setOnClickListener {
@@ -131,7 +154,9 @@ class SettingsActivity : AppCompatActivity() {
     }
 
     private fun checkStatus() {
-        tvPenStatus.text = "当前画笔通道：${PenInputFactory.activeInputName}"
+        val deviceInfo = DeviceDetector.detect()
+        tvDeviceInfo.text = "设备检测：${deviceInfo.summary}"
+        updatePenStatus()
 
         lifecycleScope.launch {
             val downloaded = AdNoteApp.instance.recognizer.isModelDownloaded()
@@ -141,5 +166,14 @@ class SettingsActivity : AppCompatActivity() {
                 "模型状态：未下载（首次识别前需联网下载）"
             }
         }
+    }
+
+    private fun updatePenStatus() {
+        val app = AdNoteApp.instance
+        val previewInput = PenInputFactory.create(
+            preferOnyx = app.preferOnyx,
+            stylusOnly = app.stylusOnly
+        )
+        tvPenStatus.text = "当前通道：${previewInput.name}"
     }
 }

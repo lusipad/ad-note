@@ -23,6 +23,12 @@ class AdNoteApp : Application() {
     var syncEngine: SyncEngine? = null
         private set
 
+    var stylusOnly: Boolean = false
+        private set
+
+    var preferOnyx: Boolean = true
+        private set
+
     override fun onCreate() {
         super.onCreate()
         instance = this
@@ -36,6 +42,8 @@ class AdNoteApp : Application() {
         val prefs = getSharedPreferences("adnote_settings", Context.MODE_PRIVATE)
         val json = prefs.getString("sync_settings", null)
         syncSettings = SyncSettings.fromJson(json)
+        stylusOnly = prefs.getBoolean("stylus_only", false)
+        preferOnyx = prefs.getBoolean("prefer_onyx", true)
 
         syncEngine = if (syncSettings.isConfigured) {
             val client = WebDavClient(
@@ -46,6 +54,16 @@ class AdNoteApp : Application() {
             )
             SyncEngine(repository, client)
         } else null
+    }
+
+    fun setStylusOnly(enabled: Boolean) {
+        stylusOnly = enabled
+        getSharedPreferences("adnote_settings", Context.MODE_PRIVATE).edit().putBoolean("stylus_only", enabled).apply()
+    }
+
+    fun setPreferOnyx(enabled: Boolean) {
+        preferOnyx = enabled
+        getSharedPreferences("adnote_settings", Context.MODE_PRIVATE).edit().putBoolean("prefer_onyx", enabled).apply()
     }
 
     fun updateSettings(newSettings: SyncSettings) {

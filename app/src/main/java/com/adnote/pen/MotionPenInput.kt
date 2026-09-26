@@ -6,10 +6,11 @@ import android.view.View
 import com.adnote.model.InkPoint
 
 class MotionPenInput(
-    var allowFingerOrMouse: Boolean = true,
+    var stylusOnly: Boolean = false,
 ) : PenInput {
 
-    override val name: String = "标准触控通道 (MotionEvent)"
+    override val name: String
+        get() = if (stylusOnly) "标准触控通道 (仅手写笔·防误触)" else "标准触控通道 (笔与手指均可)"
 
     private var view: View? = null
     private var limitRect: Rect? = null
@@ -30,8 +31,9 @@ class MotionPenInput(
 
             val toolType = event.getToolType(0)
             val isStylusOrEraser = toolType == MotionEvent.TOOL_TYPE_STYLUS || toolType == MotionEvent.TOOL_TYPE_ERASER
-            if (!isStylusOrEraser && !allowFingerOrMouse) {
-                return@setOnTouchListener false // 防手掌误触
+            if (stylusOnly && !isStylusOrEraser) {
+                // 开启防误触时忽略手指和手掌触摸
+                return@setOnTouchListener false
             }
 
             val x = event.x
@@ -50,7 +52,7 @@ class MotionPenInput(
 
                 MotionEvent.ACTION_MOVE -> {
                     if (currentPoints.isEmpty()) return@setOnTouchListener false
-                    // 收集高精度历史点
+                    // 收集高精度历史点（针对 120Hz/144Hz 高刷平板如小米平板、vivo Pad 的高频采样）
                     for (h in 0 until event.historySize) {
                         currentPoints.add(
                             InkPoint(

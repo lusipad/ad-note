@@ -155,6 +155,15 @@
             android:layout_marginBottom="8dp" />
 
         <TextView
+            android:id="@+id/tvDeviceInfo"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="设备检测：检测中..."
+            android:textSize="14sp"
+            android:textColor="@color/black"
+            android:layout_marginBottom="6dp" />
+
+        <TextView
             android:id="@+id/tvPenStatus"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -162,6 +171,24 @@
             android:textSize="14sp"
             android:textColor="@color/gray_dark"
             android:layout_marginBottom="8dp" />
+
+        <CheckBox
+            android:id="@+id/cbStylusOnly"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="防误触模式（仅手写笔书写，忽略手掌/手指接触）"
+            android:textSize="13sp"
+            android:textColor="@color/black"
+            android:layout_marginBottom="6dp" />
+
+        <CheckBox
+            android:id="@+id/cbPreferOnyx"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="优先使用文石硬件直绘低延迟通道"
+            android:textSize="13sp"
+            android:textColor="@color/black"
+            android:layout_marginBottom="12dp" />
 
         <Button
             android:id="@+id/btnFullRefreshTest"

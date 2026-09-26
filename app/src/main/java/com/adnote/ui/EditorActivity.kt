@@ -155,7 +155,11 @@ class EditorActivity : AppCompatActivity() {
             rect.set(0, 0, inkCanvas.width, inkCanvas.height)
         }
 
-        val input = PenInputFactory.create()
+        val app = AdNoteApp.instance
+        val input = PenInputFactory.create(
+            preferOnyx = app.preferOnyx,
+            stylusOnly = app.stylusOnly
+        )
         penInput = input
 
         val listener = object : PenInputListener {
