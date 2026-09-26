@@ -97,15 +97,23 @@ updated: 2026-09-26T11:30:00+08:00
 - `tags`：如果远端 md 的 ETag 和上次同步时记录的不同（说明在别处改过），就采用远端的 tags 写回本地；否则以本地为准。
 - 标题改了：先用 WebDAV `MOVE` 把远端 md 移到新路径，再做合并。
 
-## 6. 画笔与墨水屏
+## 6. 画笔与跨设备墨水屏/平板适配
+
+> 详细的各厂商硬件底层原理与开放度调研，参见：[墨水屏与各厂商硬件手写适配指南](../../hardware-compatibility.md)。
 
 - `PenInput` 接口：`attach(view, limitRect, listener)`、`setEnabled(Boolean)`、`setStrokeWidth`、`detach()`。
   listener 回调：`onStroke(points)`、`onErase(points)`。
-- `OnyxPenInput`：用 `TouchHelper` 的原始绘制模式，由固件直接画到屏幕上；笔身橡皮键走 `onRawErasing*` 回调。
+- `DeviceDetector`：自动识别设备品牌（文石、掌阅、小米、VIVO、华为、汉王）与屏幕类型（墨水屏 vs 普通彩屏）。
+- `OnyxPenInput`：用 `TouchHelper` 原始绘制模式，固件直画到屏幕上；笔身橡皮键走 `onRawErasing*` 回调。
   弹出菜单、翻页、擦除后需要重绘时，先 `setRawDrawingEnabled(false)`，重绘 View，再重新打开。
-- `MotionPenInput`：普通 `onTouchEvent`，只接受 `TOOL_TYPE_STYLUS`/`TOOL_TYPE_ERASER`（防止手掌误触），笔尖按钮也当作橡皮。
-- 选择策略：启动时尝试创建 `OnyxPenInput`，只要抛出异常（包括 `NoClassDefFoundError`、`UnsatisfiedLinkError`）就回退。当前使用哪一种会显示在设置页，也写进日志，方便真机验证。
-- `EinkRefresher`：包装 `EpdController`，提供"全刷"（清残影）；非文石设备上什么也不做。
+- `MotionPenInput`：标准 `onTouchEvent`，具备两项核心优化：
+  1. 高频采样点捕获（针对小米平板、VIVO 平板等 120Hz/144Hz 触控报点率）；
+  2. 防误触模式：可配置仅允许 `TOOL_TYPE_STYLUS`/`TOOL_TYPE_ERASER`（手掌大面积贴屏不误画）。
+- 选择策略：启动时由 `PenInputFactory` 依据用户偏好与 `DeviceDetector` 智能挂载，尝试创建 `OnyxPenInput` 失败即安全回退。
+- `EinkRefresher`：
+  1. 优先调用文石 `EpdController` 固件全刷；
+  2. 在掌阅 (iReader)、汉王等非文石墨水屏上，执行通用黑白瞬时反相物理闪刷（利用微胶囊物理特性清除残影）；
+  3. 在小米/vivo 等普通平板上仅触发平滑重绘，不产生闪烁。
 
 ## 7. 手写识别
 

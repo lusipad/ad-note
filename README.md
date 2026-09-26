@@ -42,6 +42,17 @@
 
 ---
 
+## 📱 硬件与多设备兼容指南
+
+各大墨水屏与高刷平板厂商对手写低延迟 API 的开放程度差异极大。详细的技术调研、各厂商现状与 AdNote 的自适应体系详见：
+👉 **[墨水屏与各厂商硬件手写适配指南 (`docs/hardware-compatibility.md`)](docs/hardware-compatibility.md)**
+
+- **文石 (Onyx) / 得到阅读器 Max**：优先接入官方 `TouchHelper` 固件直绘通道，延迟 < 30ms，支持笔身橡皮键与 EpdController 硬件全刷；
+- **掌阅 (iReader) / 汉王墨水屏**：智能探测并启用**通用物理反转闪刷**，解决第三方应用无官方开放 SDK 时的残影困扰；
+- **小米平板 (Xiaomi Pad) / VIVO 平板 (vivo Pad)**：高频采样（120Hz/144Hz 触控报点率）+ 防手掌误触模式（严格仅手写笔响应，手掌压屏不误画）。
+
+---
+
 ## 📐 架构设计
 
 代码采用模块化清晰分包，核心算法与领域模型不依赖 Android Framework，全部具备完整的 JVM 自动化测试：
