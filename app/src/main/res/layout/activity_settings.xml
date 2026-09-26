@@ -1,0 +1,207 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/white"
+    android:padding="16dp">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical">
+
+        <!-- 顶栏标题与返回 -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:layout_marginBottom="16dp">
+
+            <Button
+                android:id="@+id/btnBack"
+                android:layout_width="wrap_content"
+                android:layout_height="36dp"
+                android:text="← 返回"
+                android:textSize="13sp"
+                android:textColor="@color/black"
+                android:background="@drawable/bg_border_button"
+                android:paddingHorizontal="10dp"
+                android:layout_marginEnd="12dp" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/settings_title"
+                android:textSize="20sp"
+                android:textStyle="bold"
+                android:textColor="@color/black" />
+        </LinearLayout>
+
+        <!-- WebDAV 配置区 -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/settings_webdav_header"
+            android:textSize="16sp"
+            android:textStyle="bold"
+            android:textColor="@color/black"
+            android:layout_marginBottom="8dp" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/settings_server_url"
+            android:textSize="13sp"
+            android:textColor="@color/gray_dark" />
+
+        <EditText
+            android:id="@+id/etServerUrl"
+            android:layout_width="match_parent"
+            android:layout_height="40dp"
+            android:background="@drawable/bg_edit_text"
+            android:hint="@string/settings_server_url_hint"
+            android:textSize="14sp"
+            android:textColor="@color/black"
+            android:textColorHint="@color/gray_mid"
+            android:layout_marginBottom="8dp" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/settings_username"
+            android:textSize="13sp"
+            android:textColor="@color/gray_dark" />
+
+        <EditText
+            android:id="@+id/etUsername"
+            android:layout_width="match_parent"
+            android:layout_height="40dp"
+            android:background="@drawable/bg_edit_text"
+            android:textSize="14sp"
+            android:textColor="@color/black"
+            android:layout_marginBottom="8dp" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/settings_password"
+            android:textSize="13sp"
+            android:textColor="@color/gray_dark" />
+
+        <EditText
+            android:id="@+id/etPassword"
+            android:layout_width="match_parent"
+            android:layout_height="40dp"
+            android:background="@drawable/bg_edit_text"
+            android:inputType="textPassword"
+            android:textSize="14sp"
+            android:textColor="@color/black"
+            android:layout_marginBottom="8dp" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/settings_remote_dir"
+            android:textSize="13sp"
+            android:textColor="@color/gray_dark" />
+
+        <EditText
+            android:id="@+id/etRemoteDir"
+            android:layout_width="match_parent"
+            android:layout_height="40dp"
+            android:background="@drawable/bg_edit_text"
+            android:text="AdNote"
+            android:textSize="14sp"
+            android:textColor="@color/black"
+            android:layout_marginBottom="12dp" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:layout_marginBottom="24dp">
+
+            <Button
+                android:id="@+id/btnTestConnection"
+                android:layout_width="0dp"
+                android:layout_height="40dp"
+                android:layout_weight="1"
+                android:text="@string/settings_test_connection"
+                android:textSize="13sp"
+                android:textColor="@color/black"
+                android:background="@drawable/bg_border_button"
+                android:layout_marginEnd="8dp" />
+
+            <Button
+                android:id="@+id/btnSaveSettings"
+                android:layout_width="0dp"
+                android:layout_height="40dp"
+                android:layout_weight="1"
+                android:text="@string/settings_save"
+                android:textSize="13sp"
+                android:textColor="@color/white"
+                android:background="@color/black" />
+        </LinearLayout>
+
+        <!-- 设备与画笔 -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/settings_device_header"
+            android:textSize="16sp"
+            android:textStyle="bold"
+            android:textColor="@color/black"
+            android:layout_marginBottom="8dp" />
+
+        <TextView
+            android:id="@+id/tvPenStatus"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="画笔通道：检测中..."
+            android:textSize="14sp"
+            android:textColor="@color/gray_dark"
+            android:layout_marginBottom="8dp" />
+
+        <Button
+            android:id="@+id/btnFullRefreshTest"
+            android:layout_width="wrap_content"
+            android:layout_height="36dp"
+            android:text="@string/settings_full_refresh_test"
+            android:textSize="13sp"
+            android:textColor="@color/black"
+            android:background="@drawable/bg_border_button"
+            android:paddingHorizontal="12dp"
+            android:layout_marginBottom="24dp" />
+
+        <!-- 离线手写模型 -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/settings_model_header"
+            android:textSize="16sp"
+            android:textStyle="bold"
+            android:textColor="@color/black"
+            android:layout_marginBottom="8dp" />
+
+        <TextView
+            android:id="@+id/tvModelStatus"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="模型状态：检测中..."
+            android:textSize="14sp"
+            android:textColor="@color/gray_dark"
+            android:layout_marginBottom="8dp" />
+
+        <Button
+            android:id="@+id/btnDownloadModel"
+            android:layout_width="wrap_content"
+            android:layout_height="36dp"
+            android:text="@string/settings_download_model"
+            android:textSize="13sp"
+            android:textColor="@color/black"
+            android:background="@drawable/bg_border_button"
+            android:paddingHorizontal="12dp"
+            android:layout_marginBottom="24dp" />
+    </LinearLayout>
+</ScrollView>

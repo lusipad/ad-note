@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">AdNote</string>
+    <string name="action_sync">同步</string>
+    <string name="action_settings">设置</string>
+    <string name="action_new_note">+ 新建笔记</string>
+    <string name="action_refresh">全刷</string>
+    <string name="action_recognize">识别</string>
+    <string name="action_undo">撤销</string>
+    <string name="action_add_page">+ 加页</string>
+    <string name="action_save">保存</string>
+    <string name="action_delete">删除</string>
+    <string name="action_cancel">取消</string>
+    <string name="action_confirm">确认</string>
+
+    <string name="search_hint">搜索标题、标签、识别文本...</string>
+    <string name="empty_notes">暂无笔记，点击上方按钮新建</string>
+    <string name="new_note_dialog_title">新建笔记</string>
+    <string name="note_title_hint">笔记标题</string>
+    <string name="note_folder_hint">文件夹（例如：读书、工作/周会）</string>
+    <string name="note_tags_hint">标签（用逗号分隔，如：草稿, 会议）</string>
+
+    <string name="settings_title">系统设置</string>
+    <string name="settings_webdav_header">WebDAV 同步设置</string>
+    <string name="settings_server_url">服务器 URL</string>
+    <string name="settings_server_url_hint">例如: https://dav.jianguoyun.com/dav/</string>
+    <string name="settings_username">用户名</string>
+    <string name="settings_password">密码 / 应用密码</string>
+    <string name="settings_remote_dir">远端根目录</string>
+    <string name="settings_test_connection">测试连接</string>
+    <string name="settings_save">保存配置</string>
+
+    <string name="settings_device_header">设备与画笔信息</string>
+    <string name="settings_pen_channel">当前画笔通道：</string>
+    <string name="settings_model_header">手写识别模型</string>
+    <string name="settings_model_status">模型状态：</string>
+    <string name="settings_download_model">下载手写模型 (中文简体)</string>
+    <string name="settings_full_refresh_test">全刷墨水屏</string>
+</resources>

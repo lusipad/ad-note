@@ -1,0 +1,158 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="@color/white">
+
+    <!-- 顶部工具栏 -->
+    <LinearLayout
+        android:id="@+id/toolbar"
+        android:layout_width="match_parent"
+        android:layout_height="52dp"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingHorizontal="8dp"
+        android:background="@color/white">
+
+        <Button
+            android:id="@+id/btnBack"
+            android:layout_width="wrap_content"
+            android:layout_height="36dp"
+            android:text="← 返回"
+            android:textSize="13sp"
+            android:textColor="@color/black"
+            android:background="@drawable/bg_border_button"
+            android:paddingHorizontal="8dp" />
+
+        <TextView
+            android:id="@+id/tvNoteTitle"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_marginStart="8dp"
+            android:text="未命名笔记"
+            android:textSize="15sp"
+            android:textStyle="bold"
+            android:textColor="@color/black"
+            android:singleLine="true"
+            android:ellipsize="end" />
+
+        <Button
+            android:id="@+id/btnPrevPage"
+            android:layout_width="36dp"
+            android:layout_height="36dp"
+            android:text="&lt;"
+            android:textSize="14sp"
+            android:textColor="@color/black"
+            android:background="@drawable/bg_border_button"
+            android:layout_marginEnd="4dp" />
+
+        <TextView
+            android:id="@+id/tvPageIndicator"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="1/1"
+            android:textSize="13sp"
+            android:textColor="@color/black"
+            android:layout_marginEnd="4dp" />
+
+        <Button
+            android:id="@+id/btnNextPage"
+            android:layout_width="36dp"
+            android:layout_height="36dp"
+            android:text="&gt;"
+            android:textSize="14sp"
+            android:textColor="@color/black"
+            android:background="@drawable/bg_border_button"
+            android:layout_marginEnd="6dp" />
+
+        <Button
+            android:id="@+id/btnAddPage"
+            android:layout_width="wrap_content"
+            android:layout_height="36dp"
+            android:text="+页"
+            android:textSize="13sp"
+            android:textColor="@color/black"
+            android:background="@drawable/bg_border_button"
+            android:paddingHorizontal="6dp"
+            android:layout_marginEnd="6dp" />
+
+        <Button
+            android:id="@+id/btnUndo"
+            android:layout_width="wrap_content"
+            android:layout_height="36dp"
+            android:text="撤销"
+            android:textSize="13sp"
+            android:textColor="@color/black"
+            android:background="@drawable/bg_border_button"
+            android:paddingHorizontal="6dp"
+            android:layout_marginEnd="6dp" />
+
+        <Button
+            android:id="@+id/btnRecognize"
+            android:layout_width="wrap_content"
+            android:layout_height="36dp"
+            android:text="识别"
+            android:textSize="13sp"
+            android:textColor="@color/black"
+            android:background="@drawable/bg_border_button"
+            android:paddingHorizontal="6dp"
+            android:layout_marginEnd="6dp" />
+
+        <Button
+            android:id="@+id/btnRefresh"
+            android:layout_width="wrap_content"
+            android:layout_height="36dp"
+            android:text="全刷"
+            android:textSize="13sp"
+            android:textColor="@color/black"
+            android:background="@drawable/bg_border_button"
+            android:paddingHorizontal="6dp" />
+    </LinearLayout>
+
+    <!-- 分隔线 -->
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:background="@color/black" />
+
+    <!-- 画布区域 -->
+    <FrameLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1">
+
+        <com.adnote.ui.InkCanvasView
+            android:id="@+id/inkCanvas"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent" />
+
+        <!-- 识别文字提示条（可折叠） -->
+        <LinearLayout
+            android:id="@+id/layoutRecognized"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_gravity="bottom"
+            android:orientation="vertical"
+            android:background="@color/white"
+            android:visibility="gone"
+            android:padding="8dp">
+
+            <View
+                android:layout_width="match_parent"
+                android:layout_height="1dp"
+                android:background="@color/gray_light"
+                android:layout_marginBottom="6dp" />
+
+            <TextView
+                android:id="@+id/tvRecognizedResult"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:textColor="@color/black"
+                android:textSize="14sp"
+                android:maxLines="4"
+                android:ellipsize="end" />
+        </LinearLayout>
+    </FrameLayout>
+</LinearLayout>

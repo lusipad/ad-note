@@ -1,0 +1,120 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="@color/white"
+    android:padding="12dp">
+
+    <!-- 顶栏操作区 -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:layout_marginBottom="8dp">
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="AdNote"
+            android:textSize="22sp"
+            android:textStyle="bold"
+            android:textColor="@color/black" />
+
+        <Button
+            android:id="@+id/btnNewNote"
+            android:layout_width="wrap_content"
+            android:layout_height="38dp"
+            android:text="+ 新建"
+            android:textSize="13sp"
+            android:textColor="@color/white"
+            android:background="@color/black"
+            android:paddingHorizontal="10dp"
+            android:layout_marginEnd="6dp" />
+
+        <Button
+            android:id="@+id/btnSync"
+            android:layout_width="wrap_content"
+            android:layout_height="38dp"
+            android:text="同步"
+            android:textSize="13sp"
+            android:textColor="@color/black"
+            android:background="@drawable/bg_border_button"
+            android:paddingHorizontal="10dp"
+            android:layout_marginEnd="6dp" />
+
+        <Button
+            android:id="@+id/btnRefresh"
+            android:layout_width="wrap_content"
+            android:layout_height="38dp"
+            android:text="全刷"
+            android:textSize="13sp"
+            android:textColor="@color/black"
+            android:background="@drawable/bg_border_button"
+            android:paddingHorizontal="8dp"
+            android:layout_marginEnd="6dp" />
+
+        <Button
+            android:id="@+id/btnSettings"
+            android:layout_width="wrap_content"
+            android:layout_height="38dp"
+            android:text="设置"
+            android:textSize="13sp"
+            android:textColor="@color/black"
+            android:background="@drawable/bg_border_button"
+            android:paddingHorizontal="8dp" />
+    </LinearLayout>
+
+    <!-- 搜索输入框 -->
+    <EditText
+        android:id="@+id/etSearch"
+        android:layout_width="match_parent"
+        android:layout_height="40dp"
+        android:background="@drawable/bg_edit_text"
+        android:hint="@string/search_hint"
+        android:textSize="14sp"
+        android:textColor="@color/black"
+        android:textColorHint="@color/gray_mid"
+        android:imeOptions="actionSearch"
+        android:singleLine="true"
+        android:layout_marginBottom="8dp" />
+
+    <!-- 文件夹与标签水平过滤栏 -->
+    <HorizontalScrollView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:scrollbars="none"
+        android:layout_marginBottom="8dp">
+
+        <LinearLayout
+            android:id="@+id/layoutFilters"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal" />
+    </HorizontalScrollView>
+
+    <!-- 列表容器 -->
+    <FrameLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1">
+
+        <androidx.recyclerview.widget.RecyclerView
+            android:id="@+id/rvNotes"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:scrollbars="vertical" />
+
+        <TextView
+            android:id="@+id/tvEmpty"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:text="@string/empty_notes"
+            android:textColor="@color/gray_mid"
+            android:textSize="15sp"
+            android:visibility="gone" />
+    </FrameLayout>
+</LinearLayout>
