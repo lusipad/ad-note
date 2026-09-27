@@ -27,6 +27,30 @@
 
 ---
 
+## 🎬 交互演示
+
+<p align="center">
+  <img src="docs/images/demo.gif" alt="AdNote 操作交互演示" width="85%" />
+  <br />
+  <sub><i>模拟器端到端真实操作录屏：打开笔记 ➔ 实时笔锋手写 ➔ 单步撤销 ➔ 导航返回</i></sub>
+</p>
+
+## 📸 界面实测
+
+<div align="center">
+
+| 主界面（极简现代杂志风） | 极简手写画布与工具栏 |
+| :---: | :---: |
+| <img src="docs/images/screenshot_main.png" width="400" alt="主界面" /> | <img src="docs/images/screenshot_editor.png" width="400" alt="手写画布" /> |
+| **新建笔记弹窗** | **系统设置（机型自适应与 WebDAV）** |
+| <img src="docs/images/screenshot_new_note.png" width="400" alt="新建笔记" /> | <img src="docs/images/screenshot_settings.png" width="400" alt="系统设置" /> |
+
+</div>
+
+---
+
+## ✨ 核心特性
+
 - ✍️ **跨设备手写与自适应适配**：
   - **文石 (BOOX) / 得到阅读器 Max**：接入官方 `TouchHelper` 固件级低延迟通道，支持电磁笔压感曲线与笔身按键整笔擦除；
   - **掌阅 (iReader) / 汉王墨水屏**：智能识别墨水屏环境，配备**通用物理反转闪刷**，解决第三方应用无硬件 SDK 时的残影问题；
@@ -158,9 +182,13 @@ custom-obsidian-meta: 这一行自定义 Front matter 不会被 AdNote 覆盖
 
 ### 构建 APK
 ```bash
+# 构建正式 Release 安装包（自签名，开箱即装）
+./gradlew assembleRelease
+
+# 或构建 Debug 调试包
 ./gradlew assembleDebug
 ```
-产物将输出在 `app/build/outputs/apk/debug/app-debug.apk`。
+产物将输出在 `app/build/outputs/apk/release/app-release.apk` 与 `debug/app-debug.apk`。
 
 ---
 
