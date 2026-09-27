@@ -10,6 +10,9 @@ interface PenInputListener {
 
     /** 橡皮擦除轨迹完成 */
     fun onErase(points: List<InkPoint>)
+
+    /** 笔迹移动中实时预览（普通彩屏及高刷平板使用） */
+    fun onDrawing(points: List<InkPoint>) {}
 }
 
 interface PenInput {

@@ -21,6 +21,7 @@ class InkCanvasView @JvmOverloads constructor(
 
     private var page: Page? = null
     private var backgroundBitmap: Bitmap? = null
+    private var transientStroke: Stroke? = null
 
     private val paint = Paint().apply {
         color = Color.BLACK
@@ -45,7 +46,13 @@ class InkCanvasView @JvmOverloads constructor(
 
     fun getBackgroundBitmap(): Bitmap? = backgroundBitmap
 
+    fun setTransientStroke(stroke: Stroke?) {
+        this.transientStroke = stroke
+        invalidate()
+    }
+
     fun addStroke(stroke: Stroke) {
+        this.transientStroke = null
         val p = page ?: return
         page = p.copy(strokes = p.strokes + stroke)
         invalidate()
@@ -86,9 +93,10 @@ class InkCanvasView @JvmOverloads constructor(
         }
 
         // 2. 绘制上层手写笔迹涂层
-        val currentStrokes = page?.strokes ?: return
+        val currentStrokes = page?.strokes ?: emptyList()
+        val allStrokes = if (transientStroke != null) currentStrokes + transientStroke!! else currentStrokes
 
-        for (stroke in currentStrokes) {
+        for (stroke in allStrokes) {
             val outline = StrokeGeometry.outline(stroke)
             if (outline.isNotEmpty()) {
                 renderPath.reset()

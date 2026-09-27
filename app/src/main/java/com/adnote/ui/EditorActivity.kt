@@ -176,7 +176,16 @@ class EditorActivity : AppCompatActivity() {
         penInput = input
 
         val listener = object : PenInputListener {
+            override fun onDrawing(points: List<InkPoint>) {
+                if (points.isNotEmpty()) {
+                    inkCanvas.setTransientStroke(Stroke(points = points, width = 3.5f))
+                } else {
+                    inkCanvas.setTransientStroke(null)
+                }
+            }
+
             override fun onStroke(points: List<InkPoint>) {
+                inkCanvas.setTransientStroke(null)
                 if (points.isEmpty()) return
                 val stroke = Stroke(points = points, width = 3.5f)
                 inkCanvas.addStroke(stroke)
@@ -185,6 +194,7 @@ class EditorActivity : AppCompatActivity() {
             }
 
             override fun onErase(points: List<InkPoint>) {
+                inkCanvas.setTransientStroke(null)
                 if (points.isEmpty()) return
                 val currentPage = note.pages.getOrNull(currentPageIndex) ?: return
                 val hitIds = Eraser.hitStrokes(currentPage.strokes, points, radius = 10f)

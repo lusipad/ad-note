@@ -38,7 +38,7 @@ class MotionPenInput(
 
             val x = event.x
             val y = event.y
-            val inLimit = limitRect.contains(x.toInt(), y.toInt())
+            val inLimit = x >= 0 && x <= view.width && y >= 0 && y <= view.height
 
             when (event.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
@@ -47,6 +47,9 @@ class MotionPenInput(
                     isCurrentEraser = toolType == MotionEvent.TOOL_TYPE_ERASER ||
                         (event.buttonState and (MotionEvent.BUTTON_STYLUS_PRIMARY or MotionEvent.BUTTON_STYLUS_SECONDARY) != 0)
                     addPoint(event, x, y)
+                    if (!isCurrentEraser) {
+                        listener.onDrawing(currentPoints.toList())
+                    }
                     true
                 }
 
@@ -64,6 +67,9 @@ class MotionPenInput(
                         )
                     }
                     addPoint(event, x, y)
+                    if (!isCurrentEraser) {
+                        listener.onDrawing(currentPoints.toList())
+                    }
                     true
                 }
 
@@ -83,6 +89,7 @@ class MotionPenInput(
 
                 MotionEvent.ACTION_CANCEL -> {
                     currentPoints.clear()
+                    listener.onDrawing(emptyList())
                     true
                 }
 
