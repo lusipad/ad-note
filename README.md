@@ -126,7 +126,7 @@ custom-obsidian-meta: 这一行自定义 Front matter 不会被 AdNote 覆盖
 ### 1. 下载 APK
 访问 GitHub Releases 页面下载最新安装包：
 - 👉 [最新发布版本（Releases）](https://github.com/lusipad/ad-note/releases/latest)
-- 文件名为 `app-debug.apk`，内置调试签名，支持直接在得到阅读器 Max 或 Android 设备上侧载安装。
+- 推荐下载正式包 **`app-release.apk`**（优化发布构建，自签名，支持直接在得到阅读器 Max、墨水屏平板或普通 Android 设备上侧载安装）；同时亦提供 `app-debug.apk` 备用。
 
 ### 2. 坚果云 / WebDAV 同步配置
 在 AdNote「设置」页面中填写：

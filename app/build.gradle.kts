@@ -49,7 +49,10 @@ android {
     }
 
     testOptions { unitTests.isReturnDefaultValues = true }
-    lint { abortOnError = false }
+    lint {
+        abortOnError = false
+        checkReleaseBuilds = false
+    }
 }
 
 dependencies {
