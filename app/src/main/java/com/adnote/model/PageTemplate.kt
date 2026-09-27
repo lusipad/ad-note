@@ -3,12 +3,24 @@ package com.adnote.model
 import kotlinx.serialization.Serializable
 
 @Serializable
-enum class PageTemplate(val displayName: String) {
-    BLANK("空白"),
-    RULED("横线"),
-    GRID("方格"),
-    DOT("点阵"),
-    CORNELL("康奈尔");
+enum class PageTemplate(
+    val displayName: String,
+    val category: String = "常规"
+) {
+    BLANK("空白", "常规"),
+    RULED("横线·中", "横线"),
+    RULED_WIDE("横线·宽", "横线"),
+    RULED_NARROW("横线·窄", "横线"),
+    GRID("方格·中", "方格"),
+    GRID_LARGE("方格·大", "方格"),
+    GRID_SMALL("方格·密", "方格"),
+    DOT("点阵·中", "点阵"),
+    DOT_DENSE("点阵·密", "点阵"),
+    TIANZI("田字格", "练字"),
+    MIZI("米字格", "练字"),
+    PINYIN("拼音四线格", "专业"),
+    MUSIC("音乐五线谱", "专业"),
+    CORNELL("康奈尔", "常规");
 
     companion object {
         fun fromName(name: String?): PageTemplate {

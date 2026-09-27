@@ -57,4 +57,36 @@ class SvgExporterTest {
         assertTrue(svg.contains("""<g id="template_ruled""""))
         assertTrue(svg.contains("""fill="#1e3a8a""""))
     }
+
+    @Test
+    fun testExportSvgWithSpecialTemplates() {
+        val tianziPage = Page(
+            width = 1404,
+            height = 1872,
+            template = com.adnote.model.PageTemplate.TIANZI,
+            backgroundColor = "#FFFFFF"
+        )
+        val tianziSvg = SvgExporter.export(tianziPage)
+        assertTrue(tianziSvg.contains("""<g id="template_tianzi""""))
+        assertTrue(tianziSvg.contains("""stroke-dasharray="5,4""""))
+
+        val pinyinPage = Page(
+            width = 1404,
+            height = 1872,
+            template = com.adnote.model.PageTemplate.PINYIN,
+            backgroundColor = "#FFFFFF"
+        )
+        val pinyinSvg = SvgExporter.export(pinyinPage)
+        assertTrue(pinyinSvg.contains("""<g id="template_pinyin""""))
+        assertTrue(pinyinSvg.contains("""stroke-dasharray="5,4""""))
+
+        val musicPage = Page(
+            width = 1404,
+            height = 1872,
+            template = com.adnote.model.PageTemplate.MUSIC,
+            backgroundColor = "#FFFFFF"
+        )
+        val musicSvg = SvgExporter.export(musicPage)
+        assertTrue(musicSvg.contains("""<g id="template_music""""))
+    }
 }

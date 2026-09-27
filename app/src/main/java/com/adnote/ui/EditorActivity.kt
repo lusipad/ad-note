@@ -291,6 +291,7 @@ class EditorActivity : AppCompatActivity() {
     private fun showPageTemplateDialog() {
         penInput?.setEnabled(false)
         val dialogView = layoutInflater.inflate(R.layout.dialog_paper_template, null)
+        val layoutTemplateCategoryChips = dialogView.findViewById<LinearLayout>(R.id.layoutTemplateCategoryChips)
         val layoutTemplateChips = dialogView.findViewById<LinearLayout>(R.id.layoutTemplateChips)
         val layoutColorChips = dialogView.findViewById<LinearLayout>(R.id.layoutColorChips)
         val cbApplyToAllPages = dialogView.findViewById<CheckBox>(R.id.cbApplyToAllPages)
@@ -298,10 +299,17 @@ class EditorActivity : AppCompatActivity() {
         val currentPage = note.pages.getOrNull(currentPageIndex)
         var selectedTemplate = currentPage?.template ?: PageTemplate.BLANK
         var selectedColorHex = currentPage?.backgroundColor ?: PaperPresets.WHITE.hex
+        val categories = listOf("全部", "常规", "横线", "方格", "点阵", "练字", "专业")
+        var selectedCategory = selectedTemplate.category.let { cat -> if (categories.contains(cat)) cat else "全部" }
 
         fun refreshTemplateChips() {
             layoutTemplateChips.removeAllViews()
-            PageTemplate.entries.forEach { template ->
+            val filtered = if (selectedCategory == "全部") {
+                PageTemplate.entries
+            } else {
+                PageTemplate.entries.filter { it.category == selectedCategory }
+            }
+            filtered.forEach { template ->
                 val isSelected = template == selectedTemplate
                 val btn = Button(this).apply {
                     text = template.displayName
@@ -328,6 +336,39 @@ class EditorActivity : AppCompatActivity() {
                     }
                 }
                 layoutTemplateChips.addView(btn)
+            }
+        }
+
+        fun refreshCategoryChips() {
+            layoutTemplateCategoryChips.removeAllViews()
+            categories.forEach { cat ->
+                val isSelected = cat == selectedCategory
+                val btn = Button(this).apply {
+                    text = cat
+                    textSize = 12f
+                    stateListAnimator = null
+                    val lp = LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.WRAP_CONTENT,
+                        (32 * resources.displayMetrics.density).toInt()
+                    ).apply {
+                        marginEnd = (8 * resources.displayMetrics.density).toInt()
+                    }
+                    layoutParams = lp
+                    setPadding((12 * resources.displayMetrics.density).toInt(), 0, (12 * resources.displayMetrics.density).toInt(), 0)
+                    if (isSelected) {
+                        setBackgroundResource(R.drawable.bg_chip_selected)
+                        setTextColor(getColor(R.color.white))
+                    } else {
+                        setBackgroundResource(R.drawable.bg_chip_unselected)
+                        setTextColor(getColor(R.color.text_primary))
+                    }
+                    setOnClickListener {
+                        selectedCategory = cat
+                        refreshCategoryChips()
+                        refreshTemplateChips()
+                    }
+                }
+                layoutTemplateCategoryChips.addView(btn)
             }
         }
 
@@ -363,6 +404,7 @@ class EditorActivity : AppCompatActivity() {
             }
         }
 
+        refreshCategoryChips()
         refreshTemplateChips()
         refreshColorChips()
 
