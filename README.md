@@ -32,6 +32,11 @@
   - **掌阅 (iReader) / 汉王墨水屏**：智能识别墨水屏环境，配备**通用物理反转闪刷**，解决第三方应用无硬件 SDK 时的残影问题；
   - **小米平板 (Xiaomi / Redmi) / VIVO 平板 (vivo / iQOO)**：支持 120Hz/144Hz 历史高频点采集，内置「防手掌误触模式」（仅手写笔响应，手掌压屏不误画）；
   - **智能机型感知（`DeviceDetector`）**：自动识别设备品牌、型号与屏幕材质（E-ink 墨水屏 vs 普通彩屏），自适应切换最佳通道与刷新策略。
+- 📄 **PDF 导入与手写批注**：
+  - **原生极简集成**：基于 Android 原生 `PdfRenderer`，无需体积臃肿的第三方库，保持极小 APK 体积与对墨水屏底层的纯粹兼容；
+  - **动态视口与 LRU 缓存**：自动匹配墨水屏画布分辨率动态缩放，配备 4 页 LRU 内存位图缓存，防 OOM 且翻页丝滑；
+  - **低延迟手写批注**：在 PDF 原文之上覆盖低延迟手写笔迹层，支持原笔迹批注、高亮圈点与整笔擦除；
+  - **一键合并导出**：基于 `PdfDocument` 支持将原始 PDF 与手写笔迹图层合并导出为标准带批注 PDF 文档。
 - 🔄 **WebDAV / Obsidian 互联同步**：
   - 自动渲染每页笔迹为轻量高清矢量 **SVG**；
   - 导出格式为标准 **Obsidian Markdown**，内置嵌入式图片引用与识别引用区；
@@ -61,6 +66,7 @@
 com.adnote
 ├── model/        Note、Page、Stroke、InkPoint（纯数据模型，kotlinx.serialization）
 ├── ink/          StrokeGeometry（Canvas 与 SVG 共享多边形轮廓算法）、Eraser（整笔擦除相交算法）
+├── pdf/          PdfImporter、PdfPageRenderer（LRU 缓存渲染）、PdfExporter（图层合并导出）
 ├── storage/      NoteRepository（本地原子文件存储、删除墓碑 Tombstone、全文检索）
 ├── export/       SvgExporter（矢量 SVG 导出）、MarkdownComposer（Obsidian 合并引擎）、RemotePaths
 ├── sync/         WebDavClient（基于 OkHttp 的标准 WebDAV 实现）、SyncEngine（同步调度器）

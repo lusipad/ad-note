@@ -55,6 +55,37 @@ class NoteRepository(private val root: File) {
         return note
     }
 
+    fun getNoteDir(id: String): File = File(notesDir, id)
+
+    fun getPdfFile(note: Note): File? {
+        val rel = note.pdfPath ?: return null
+        return File(getNoteDir(note.id), rel)
+    }
+
+    fun createPdfNote(
+        title: String,
+        folder: String,
+        pdfSource: java.io.InputStream,
+        pages: List<Page>,
+        now: Long = System.currentTimeMillis()
+    ): Note {
+        val note = Note(
+            title = title,
+            folder = folder,
+            pages = pages,
+            createdAt = now,
+            updatedAt = now,
+            pdfPath = "document.pdf"
+        )
+        val dir = getNoteDir(note.id).apply { mkdirs() }
+        val targetPdf = File(dir, "document.pdf")
+        targetPdf.outputStream().use { out ->
+            pdfSource.copyTo(out)
+        }
+        save(note)
+        return note
+    }
+
     fun delete(note: Note, remoteInkDir: String?) {
         if (note.sync.lastSyncedAt > 0) {
             val t = Tombstone(note.id, note.sync.remoteMdPath, remoteInkDir)

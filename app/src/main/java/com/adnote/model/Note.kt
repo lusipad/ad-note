@@ -45,8 +45,11 @@ data class Note(
     val createdAt: Long,
     val updatedAt: Long,
     val sync: SyncState = SyncState(),
+    /** 关联的 PDF 文件相对路径（相对笔记目录，如 "document.pdf"）。若为 null 则为普通手写笔记本。 */
+    val pdfPath: String? = null,
 ) {
     val isDirty: Boolean get() = updatedAt > sync.lastSyncedAt
+    val isPdf: Boolean get() = !pdfPath.isNullOrBlank()
 
     /** 用于本地搜索的全文：标题 + 标签 + 识别文字。 */
     fun searchableText(): String = buildString {

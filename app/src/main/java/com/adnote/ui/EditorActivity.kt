@@ -30,6 +30,7 @@ class EditorActivity : AppCompatActivity() {
     private lateinit var note: Note
     private var currentPageIndex: Int = 0
     private var penInput: PenInput? = null
+    private var pdfRenderer: com.adnote.pdf.PdfPageRenderer? = null
 
     private lateinit var btnBack: Button
     private lateinit var tvNoteTitle: TextView
@@ -57,6 +58,13 @@ class EditorActivity : AppCompatActivity() {
         }
         note = loaded
 
+        if (note.isPdf) {
+            val pdfFile = AdNoteApp.instance.repository.getPdfFile(note)
+            if (pdfFile != null && pdfFile.exists()) {
+                pdfRenderer = com.adnote.pdf.PdfPageRenderer(pdfFile)
+            }
+        }
+
         initViews()
         setupListeners()
         loadPage(0)
@@ -76,11 +84,13 @@ class EditorActivity : AppCompatActivity() {
         layoutRecognized = findViewById(R.id.layoutRecognized)
         tvRecognizedResult = findViewById(R.id.tvRecognizedResult)
 
+        btnAddPage.visibility = if (note.isPdf) View.GONE else View.VISIBLE
         updateTitleView()
     }
 
     private fun updateTitleView() {
         tvNoteTitle.text = buildString {
+            if (note.isPdf) append("📄 [PDF] ")
             append(note.title)
             if (note.folder != Note.DEFAULT_FOLDER) {
                 append(" (${note.folder})")
@@ -205,6 +215,22 @@ class EditorActivity : AppCompatActivity() {
         } else {
             layoutRecognized.visibility = View.GONE
         }
+
+        val renderer = pdfRenderer
+        if (renderer != null) {
+            inkCanvas.post {
+                val targetW = if (inkCanvas.width > 0) inkCanvas.width else page.width
+                val targetH = if (inkCanvas.height > 0) inkCanvas.height else page.height
+                lifecycleScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                    val bitmap = renderer.renderPage(index, targetW, targetH)
+                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                        inkCanvas.setBackgroundBitmap(bitmap)
+                    }
+                }
+            }
+        } else {
+            inkCanvas.setBackgroundBitmap(null)
+        }
     }
 
     private fun syncCurrentPageFromCanvas() {
@@ -310,6 +336,8 @@ class EditorActivity : AppCompatActivity() {
         super.onDestroy()
         penInput?.detach()
         penInput = null
+        pdfRenderer?.close()
+        pdfRenderer = null
     }
 
     companion object {

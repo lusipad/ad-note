@@ -32,6 +32,7 @@ import java.util.Locale
 class MainActivity : AppCompatActivity() {
 
     private lateinit var btnNewNote: Button
+    private lateinit var btnImportPdf: Button
     private lateinit var btnSync: Button
     private lateinit var btnRefresh: Button
     private lateinit var btnSettings: Button
@@ -39,6 +40,14 @@ class MainActivity : AppCompatActivity() {
     private lateinit var layoutFilters: LinearLayout
     private lateinit var rvNotes: RecyclerView
     private lateinit var tvEmpty: TextView
+
+    private val openPdfLauncher = registerForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            importPdf(uri)
+        }
+    }
 
     private val noteAdapter = NoteAdapter(
         onItemClick = { note ->
@@ -68,6 +77,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun initViews() {
         btnNewNote = findViewById(R.id.btnNewNote)
+        btnImportPdf = findViewById(R.id.btnImportPdf)
         btnSync = findViewById(R.id.btnSync)
         btnRefresh = findViewById(R.id.btnRefresh)
         btnSettings = findViewById(R.id.btnSettings)
@@ -83,6 +93,10 @@ class MainActivity : AppCompatActivity() {
     private fun setupListeners() {
         btnNewNote.setOnClickListener {
             showNewNoteDialog()
+        }
+
+        btnImportPdf.setOnClickListener {
+            openPdfLauncher.launch(arrayOf("application/pdf"))
         }
 
         btnSync.setOnClickListener {
@@ -259,6 +273,30 @@ class MainActivity : AppCompatActivity() {
             refreshNotes()
         }
     }
+
+    private fun importPdf(uri: android.net.Uri) {
+        Toast.makeText(this, "正在导入并解析 PDF 页面...", Toast.LENGTH_SHORT).show()
+        lifecycleScope.launch {
+            val result = withContext(Dispatchers.IO) {
+                com.adnote.pdf.PdfImporter.importPdfFromUri(
+                    context = this@MainActivity,
+                    uri = uri,
+                    repository = AdNoteApp.instance.repository,
+                    folder = selectedFolder ?: Note.DEFAULT_FOLDER
+                )
+            }
+            if (result.isSuccess) {
+                val note = result.getOrThrow()
+                refreshNotes()
+                refreshFilters()
+                Toast.makeText(this@MainActivity, "PDF 导入成功，共 ${note.pages.size} 页", Toast.LENGTH_SHORT).show()
+                EditorActivity.start(this@MainActivity, note.id)
+            } else {
+                val err = result.exceptionOrNull()?.message ?: "导入失败"
+                Toast.makeText(this@MainActivity, "导入失败: $err", Toast.LENGTH_LONG).show()
+            }
+        }
+    }
 }
 
 class NoteAdapter(
@@ -294,7 +332,7 @@ class NoteAdapter(
         private val tvTags: TextView = view.findViewById(R.id.tvTags)
 
         fun bind(note: Note) {
-            tvTitle.text = note.title
+            tvTitle.text = if (note.isPdf) "📄 [PDF] ${note.title}" else note.title
             tvFolder.text = "📁 ${note.folder}"
             tvDate.text = dateFormat.format(Date(note.updatedAt))
 
