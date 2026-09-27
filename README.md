@@ -39,11 +39,11 @@
 
 <div align="center">
 
-| 主界面（极简现代杂志风） | 极简手写画布与工具栏 |
+| 主界面（极简现代杂志风） | 横线护眼笔记本（多色墨水实测） |
 | :---: | :---: |
-| <img src="docs/images/screenshot_main.png" width="400" alt="主界面" /> | <img src="docs/images/screenshot_editor.png" width="400" alt="手写画布" /> |
-| **新建笔记弹窗** | **系统设置（机型自适应与 WebDAV）** |
-| <img src="docs/images/screenshot_new_note.png" width="400" alt="新建笔记" /> | <img src="docs/images/screenshot_settings.png" width="400" alt="系统设置" /> |
+| <img src="docs/images/screenshot_main.png" width="400" alt="主界面" /> | <img src="docs/images/screenshot_ruled_cream.png" width="400" alt="横线护眼笔记本" /> |
+| **康奈尔笔记法（暗黑纸张 + 粉笔白墨水）** | **新建笔记（自由选择底质模板与纸张）** |
+| <img src="docs/images/screenshot_dark_cornell.png" width="400" alt="康奈尔暗黑笔记本" /> | <img src="docs/images/screenshot_new_note.png" width="400" alt="新建笔记底质选择" /> |
 
 </div>
 
@@ -51,6 +51,12 @@
 
 ## ✨ 核心特性
 
+- 📓 **真实笔记本底质模板与多彩画笔墨水**：
+  - **5 种专业笔记本底质**：空白（Blank）、横线（Ruled 经典横格、左侧红线装订留白）、方格（Grid 44px 精细网格）、点阵（Dot Matrix 44px 点阵圆点）、康奈尔笔记法（Cornell Notes 标准线索栏、笔记栏与底部总结栏）；
+  - **4 种护眼纸张底色**：纯白（Pure White）、护眼米黄（Eye-Care Cream `#FBF8F1`）、复古牛皮（Vintage Kraft `#F0EAE1`）、深邃暗黑（Night Charcoal `#1E1E20`）；
+  - **6 种墨水颜色与笔尖粗细**：墨黑、商务蓝、批注红、森林绿、铅笔灰、粉笔白，搭配细（2.0）、中（3.5）、粗（6.0）三档笔尖；
+  - **暗黑模式墨水智能自适应**：切换暗黑纸张底色时，默认黑墨水自动智能转换为粉笔白墨水，防止书写隐形；
+  - **全链路矢量保真导出**：底质模板与纸张底色不仅在设备屏幕上微米级精细绘制，同步到 Obsidian 的矢量 SVG 和导出的 PDF 也会完整嵌入模板图层与底色。
 - ✍️ **跨设备手写与自适应适配**：
   - **文石 (BOOX) / 得到阅读器 Max**：接入官方 `TouchHelper` 固件级低延迟通道，支持电磁笔压感曲线与笔身按键整笔擦除；
   - **掌阅 (iReader) / 汉王墨水屏**：智能识别墨水屏环境，配备**通用物理反转闪刷**，解决第三方应用无硬件 SDK 时的残影问题；

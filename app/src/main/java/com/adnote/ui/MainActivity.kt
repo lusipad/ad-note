@@ -21,6 +21,8 @@ import androidx.recyclerview.widget.RecyclerView
 import com.adnote.R
 import com.adnote.export.RemotePaths
 import com.adnote.model.Note
+import com.adnote.model.PageTemplate
+import com.adnote.model.PaperPresets
 import com.adnote.pen.EinkRefresher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -204,15 +206,87 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showNewNoteDialog() {
-        val dialogView = layoutInflater.inflate(R.layout.dialog_edit_note, null)
+        val dialogView = layoutInflater.inflate(R.layout.dialog_new_note, null)
         val etTitle = dialogView.findViewById<EditText>(R.id.etDialogTitle)
         val etFolder = dialogView.findViewById<EditText>(R.id.etDialogFolder)
         val etTags = dialogView.findViewById<EditText>(R.id.etDialogTags)
+        val layoutTemplateChips = dialogView.findViewById<LinearLayout>(R.id.layoutTemplateChips)
+        val layoutColorChips = dialogView.findViewById<LinearLayout>(R.id.layoutColorChips)
 
         val defaultTitle = "笔记 " + SimpleDateFormat("MM-dd HH:mm", Locale.getDefault()).format(Date())
         etTitle.setText(defaultTitle)
         etFolder.setText(selectedFolder ?: Note.DEFAULT_FOLDER)
         selectedTag?.let { etTags.setText(it) }
+
+        var selectedTemplate = PageTemplate.RULED
+        var selectedColorHex = PaperPresets.WHITE.hex
+
+        fun refreshTemplateChips() {
+            layoutTemplateChips.removeAllViews()
+            PageTemplate.entries.forEach { template ->
+                val isSelected = template == selectedTemplate
+                val btn = Button(this).apply {
+                    text = template.displayName
+                    textSize = 12f
+                    stateListAnimator = null
+                    val lp = LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.WRAP_CONTENT,
+                        (32 * resources.displayMetrics.density).toInt()
+                    ).apply {
+                        marginEnd = (8 * resources.displayMetrics.density).toInt()
+                    }
+                    layoutParams = lp
+                    setPadding((12 * resources.displayMetrics.density).toInt(), 0, (12 * resources.displayMetrics.density).toInt(), 0)
+                    if (isSelected) {
+                        setBackgroundResource(R.drawable.bg_chip_selected)
+                        setTextColor(getColor(R.color.white))
+                    } else {
+                        setBackgroundResource(R.drawable.bg_chip_unselected)
+                        setTextColor(getColor(R.color.text_primary))
+                    }
+                    setOnClickListener {
+                        selectedTemplate = template
+                        refreshTemplateChips()
+                    }
+                }
+                layoutTemplateChips.addView(btn)
+            }
+        }
+
+        fun refreshColorChips() {
+            layoutColorChips.removeAllViews()
+            PaperPresets.ALL.forEach { tone ->
+                val isSelected = tone.hex.equals(selectedColorHex, ignoreCase = true)
+                val btn = Button(this).apply {
+                    text = tone.displayName
+                    textSize = 12f
+                    stateListAnimator = null
+                    val lp = LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.WRAP_CONTENT,
+                        (32 * resources.displayMetrics.density).toInt()
+                    ).apply {
+                        marginEnd = (8 * resources.displayMetrics.density).toInt()
+                    }
+                    layoutParams = lp
+                    setPadding((12 * resources.displayMetrics.density).toInt(), 0, (12 * resources.displayMetrics.density).toInt(), 0)
+                    if (isSelected) {
+                        setBackgroundResource(R.drawable.bg_chip_selected)
+                        setTextColor(getColor(R.color.white))
+                    } else {
+                        setBackgroundResource(R.drawable.bg_chip_unselected)
+                        setTextColor(getColor(R.color.text_primary))
+                    }
+                    setOnClickListener {
+                        selectedColorHex = tone.hex
+                        refreshColorChips()
+                    }
+                }
+                layoutColorChips.addView(btn)
+            }
+        }
+
+        refreshTemplateChips()
+        refreshColorChips()
 
         AlertDialog.Builder(this)
             .setTitle(R.string.new_note_dialog_title)
@@ -228,7 +302,9 @@ class MainActivity : AppCompatActivity() {
                     title = title,
                     folder = folder,
                     pageWidth = 1404,
-                    pageHeight = 1872
+                    pageHeight = 1872,
+                    template = selectedTemplate,
+                    backgroundColor = selectedColorHex
                 ).copy(tags = tags)
                 AdNoteApp.instance.repository.save(created)
 

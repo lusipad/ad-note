@@ -2,10 +2,15 @@ package com.adnote.ui
 
 import android.content.Context
 import android.content.Intent
+import android.graphics.Color
 import android.graphics.Rect
 import android.os.Bundle
+import android.text.SpannableString
+import android.text.Spanned
+import android.text.style.ForegroundColorSpan
 import android.view.View
 import android.widget.Button
+import android.widget.CheckBox
 import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.TextView
@@ -18,6 +23,9 @@ import com.adnote.ink.Eraser
 import com.adnote.model.InkPoint
 import com.adnote.model.Note
 import com.adnote.model.Page
+import com.adnote.model.PageTemplate
+import com.adnote.model.PaperPresets
+import com.adnote.model.PenPresets
 import com.adnote.model.Stroke
 import com.adnote.pen.EinkRefresher
 import com.adnote.pen.PenInput
@@ -38,12 +46,17 @@ class EditorActivity : AppCompatActivity() {
     private lateinit var tvPageIndicator: TextView
     private lateinit var btnNextPage: Button
     private lateinit var btnAddPage: Button
+    private lateinit var btnPageTemplate: Button
+    private lateinit var btnPenSettings: Button
     private lateinit var btnUndo: Button
     private lateinit var btnRecognize: Button
     private lateinit var btnRefresh: Button
     private lateinit var inkCanvas: InkCanvasView
     private lateinit var layoutRecognized: LinearLayout
     private lateinit var tvRecognizedResult: TextView
+
+    private var activePenColor: String = com.adnote.model.PenPresets.BLACK.hex
+    private var activePenWidth: Float = com.adnote.model.PenPresets.WIDTH_MEDIUM
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -77,6 +90,8 @@ class EditorActivity : AppCompatActivity() {
         tvPageIndicator = findViewById(R.id.tvPageIndicator)
         btnNextPage = findViewById(R.id.btnNextPage)
         btnAddPage = findViewById(R.id.btnAddPage)
+        btnPageTemplate = findViewById(R.id.btnPageTemplate)
+        btnPenSettings = findViewById(R.id.btnPenSettings)
         btnUndo = findViewById(R.id.btnUndo)
         btnRecognize = findViewById(R.id.btnRecognize)
         btnRefresh = findViewById(R.id.btnRefresh)
@@ -88,6 +103,7 @@ class EditorActivity : AppCompatActivity() {
         }
 
         btnAddPage.visibility = if (note.isPdf) View.GONE else View.VISIBLE
+        btnPageTemplate.visibility = if (note.isPdf) View.GONE else View.VISIBLE
         updateTitleView()
     }
 
@@ -124,15 +140,26 @@ class EditorActivity : AppCompatActivity() {
         }
 
         btnAddPage.setOnClickListener {
+            val current = note.pages.getOrNull(currentPageIndex)
+            val template = current?.template ?: com.adnote.model.PageTemplate.BLANK
+            val bgColor = current?.backgroundColor ?: "#FFFFFF"
             val w = inkCanvas.width.coerceAtLeast(1404)
             val h = inkCanvas.height.coerceAtLeast(1872)
-            val newPage = Page(width = w, height = h)
+            val newPage = Page(width = w, height = h, template = template, backgroundColor = bgColor)
             note = note.copy(
                 pages = note.pages + newPage,
                 updatedAt = System.currentTimeMillis()
             )
             saveNote()
             loadPage(note.pages.lastIndex)
+        }
+
+        btnPageTemplate.setOnClickListener {
+            showPageTemplateDialog()
+        }
+
+        btnPenSettings.setOnClickListener {
+            showPenSettingsDialog()
         }
 
         btnUndo.setOnClickListener {
@@ -178,7 +205,7 @@ class EditorActivity : AppCompatActivity() {
         val listener = object : PenInputListener {
             override fun onDrawing(points: List<InkPoint>) {
                 if (points.isNotEmpty()) {
-                    inkCanvas.setTransientStroke(Stroke(points = points, width = 3.5f))
+                    inkCanvas.setTransientStroke(Stroke(points = points, width = activePenWidth, color = activePenColor))
                 } else {
                     inkCanvas.setTransientStroke(null)
                 }
@@ -187,7 +214,7 @@ class EditorActivity : AppCompatActivity() {
             override fun onStroke(points: List<InkPoint>) {
                 inkCanvas.setTransientStroke(null)
                 if (points.isEmpty()) return
-                val stroke = Stroke(points = points, width = 3.5f)
+                val stroke = Stroke(points = points, width = activePenWidth, color = activePenColor)
                 inkCanvas.addStroke(stroke)
                 syncCurrentPageFromCanvas()
                 saveNote()
@@ -209,6 +236,10 @@ class EditorActivity : AppCompatActivity() {
         }
 
         input.attach(inkCanvas, rect, listener)
+        runCatching {
+            input.setStrokeColor(Color.parseColor(activePenColor))
+            input.setStrokeWidth(activePenWidth)
+        }
     }
 
     private fun loadPage(index: Int) {
@@ -216,6 +247,17 @@ class EditorActivity : AppCompatActivity() {
         currentPageIndex = index
         val page = note.pages[index]
         inkCanvas.setPage(page)
+
+        val paperTone = PaperPresets.find(page.backgroundColor)
+        if (paperTone.isDark && activePenColor.equals(PenPresets.BLACK.hex, ignoreCase = true)) {
+            activePenColor = PenPresets.WHITE.hex
+        } else if (!paperTone.isDark && activePenColor.equals(PenPresets.WHITE.hex, ignoreCase = true)) {
+            activePenColor = PenPresets.BLACK.hex
+        }
+        runCatching {
+            penInput?.setStrokeColor(Color.parseColor(activePenColor))
+            penInput?.setStrokeWidth(activePenWidth)
+        }
 
         tvPageIndicator.text = "${index + 1}/${note.pages.size}"
         btnPrevPage.isEnabled = index > 0
@@ -244,6 +286,215 @@ class EditorActivity : AppCompatActivity() {
         } else {
             inkCanvas.setBackgroundBitmap(null)
         }
+    }
+
+    private fun showPageTemplateDialog() {
+        penInput?.setEnabled(false)
+        val dialogView = layoutInflater.inflate(R.layout.dialog_paper_template, null)
+        val layoutTemplateChips = dialogView.findViewById<LinearLayout>(R.id.layoutTemplateChips)
+        val layoutColorChips = dialogView.findViewById<LinearLayout>(R.id.layoutColorChips)
+        val cbApplyToAllPages = dialogView.findViewById<CheckBox>(R.id.cbApplyToAllPages)
+
+        val currentPage = note.pages.getOrNull(currentPageIndex)
+        var selectedTemplate = currentPage?.template ?: PageTemplate.BLANK
+        var selectedColorHex = currentPage?.backgroundColor ?: PaperPresets.WHITE.hex
+
+        fun refreshTemplateChips() {
+            layoutTemplateChips.removeAllViews()
+            PageTemplate.entries.forEach { template ->
+                val isSelected = template == selectedTemplate
+                val btn = Button(this).apply {
+                    text = template.displayName
+                    textSize = 12f
+                    stateListAnimator = null
+                    val lp = LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.WRAP_CONTENT,
+                        (32 * resources.displayMetrics.density).toInt()
+                    ).apply {
+                        marginEnd = (8 * resources.displayMetrics.density).toInt()
+                    }
+                    layoutParams = lp
+                    setPadding((12 * resources.displayMetrics.density).toInt(), 0, (12 * resources.displayMetrics.density).toInt(), 0)
+                    if (isSelected) {
+                        setBackgroundResource(R.drawable.bg_chip_selected)
+                        setTextColor(getColor(R.color.white))
+                    } else {
+                        setBackgroundResource(R.drawable.bg_chip_unselected)
+                        setTextColor(getColor(R.color.text_primary))
+                    }
+                    setOnClickListener {
+                        selectedTemplate = template
+                        refreshTemplateChips()
+                    }
+                }
+                layoutTemplateChips.addView(btn)
+            }
+        }
+
+        fun refreshColorChips() {
+            layoutColorChips.removeAllViews()
+            PaperPresets.ALL.forEach { tone ->
+                val isSelected = tone.hex.equals(selectedColorHex, ignoreCase = true)
+                val btn = Button(this).apply {
+                    text = tone.displayName
+                    textSize = 12f
+                    stateListAnimator = null
+                    val lp = LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.WRAP_CONTENT,
+                        (32 * resources.displayMetrics.density).toInt()
+                    ).apply {
+                        marginEnd = (8 * resources.displayMetrics.density).toInt()
+                    }
+                    layoutParams = lp
+                    setPadding((12 * resources.displayMetrics.density).toInt(), 0, (12 * resources.displayMetrics.density).toInt(), 0)
+                    if (isSelected) {
+                        setBackgroundResource(R.drawable.bg_chip_selected)
+                        setTextColor(getColor(R.color.white))
+                    } else {
+                        setBackgroundResource(R.drawable.bg_chip_unselected)
+                        setTextColor(getColor(R.color.text_primary))
+                    }
+                    setOnClickListener {
+                        selectedColorHex = tone.hex
+                        refreshColorChips()
+                    }
+                }
+                layoutColorChips.addView(btn)
+            }
+        }
+
+        refreshTemplateChips()
+        refreshColorChips()
+
+        AlertDialog.Builder(this)
+            .setTitle("笔记本底质与纸张")
+            .setView(dialogView)
+            .setPositiveButton("应用") { _, _ ->
+                val applyToAll = cbApplyToAllPages.isChecked
+                val updatedPages = if (applyToAll) {
+                    note.pages.map { it.copy(template = selectedTemplate, backgroundColor = selectedColorHex) }
+                } else {
+                    note.pages.mapIndexed { idx, p ->
+                        if (idx == currentPageIndex) p.copy(template = selectedTemplate, backgroundColor = selectedColorHex) else p
+                    }
+                }
+                note = note.copy(pages = updatedPages, updatedAt = System.currentTimeMillis())
+                saveNote()
+                loadPage(currentPageIndex)
+                penInput?.setEnabled(true)
+            }
+            .setNegativeButton("取消") { _, _ ->
+                penInput?.setEnabled(true)
+            }
+            .setOnDismissListener {
+                penInput?.setEnabled(true)
+            }
+            .show()
+    }
+
+    private fun showPenSettingsDialog() {
+        penInput?.setEnabled(false)
+        val dialogView = layoutInflater.inflate(R.layout.dialog_pen_settings, null)
+        val layoutPenColorChips = dialogView.findViewById<LinearLayout>(R.id.layoutPenColorChips)
+        val layoutPenWidthChips = dialogView.findViewById<LinearLayout>(R.id.layoutPenWidthChips)
+
+        var tempColorHex = activePenColor
+        var tempWidth = activePenWidth
+
+        fun refreshColorChips() {
+            layoutPenColorChips.removeAllViews()
+            PenPresets.ALL.forEach { pen ->
+                val isSelected = pen.hex.equals(tempColorHex, ignoreCase = true)
+                val btn = Button(this).apply {
+                    val span = SpannableString("●  ${pen.displayName}")
+                    span.setSpan(
+                        ForegroundColorSpan(Color.parseColor(pen.hex)),
+                        0,
+                        1,
+                        Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
+                    )
+                    text = span
+                    textSize = 12f
+                    stateListAnimator = null
+                    val lp = LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.WRAP_CONTENT,
+                        (32 * resources.displayMetrics.density).toInt()
+                    ).apply {
+                        marginEnd = (8 * resources.displayMetrics.density).toInt()
+                    }
+                    layoutParams = lp
+                    setPadding((12 * resources.displayMetrics.density).toInt(), 0, (12 * resources.displayMetrics.density).toInt(), 0)
+                    if (isSelected) {
+                        setBackgroundResource(R.drawable.bg_chip_selected)
+                        setTextColor(getColor(R.color.white))
+                    } else {
+                        setBackgroundResource(R.drawable.bg_chip_unselected)
+                        setTextColor(getColor(R.color.text_primary))
+                    }
+                    setOnClickListener {
+                        tempColorHex = pen.hex
+                        refreshColorChips()
+                    }
+                }
+                layoutPenColorChips.addView(btn)
+            }
+        }
+
+        fun refreshWidthChips() {
+            layoutPenWidthChips.removeAllViews()
+            PenPresets.WIDTHS.forEach { opt ->
+                val isSelected = (opt.width == tempWidth)
+                val btn = Button(this).apply {
+                    text = opt.displayName
+                    textSize = 12f
+                    stateListAnimator = null
+                    val lp = LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.WRAP_CONTENT,
+                        (32 * resources.displayMetrics.density).toInt()
+                    ).apply {
+                        marginEnd = (8 * resources.displayMetrics.density).toInt()
+                    }
+                    layoutParams = lp
+                    setPadding((12 * resources.displayMetrics.density).toInt(), 0, (12 * resources.displayMetrics.density).toInt(), 0)
+                    if (isSelected) {
+                        setBackgroundResource(R.drawable.bg_chip_selected)
+                        setTextColor(getColor(R.color.white))
+                    } else {
+                        setBackgroundResource(R.drawable.bg_chip_unselected)
+                        setTextColor(getColor(R.color.text_primary))
+                    }
+                    setOnClickListener {
+                        tempWidth = opt.width
+                        refreshWidthChips()
+                    }
+                }
+                layoutPenWidthChips.addView(btn)
+            }
+        }
+
+        refreshColorChips()
+        refreshWidthChips()
+
+        AlertDialog.Builder(this)
+            .setTitle("画笔与墨水设置")
+            .setView(dialogView)
+            .setPositiveButton("确定") { _, _ ->
+                activePenColor = tempColorHex
+                activePenWidth = tempWidth
+                runCatching {
+                    penInput?.setStrokeColor(Color.parseColor(activePenColor))
+                    penInput?.setStrokeWidth(activePenWidth)
+                }
+                Toast.makeText(this, "画笔已更新", Toast.LENGTH_SHORT).show()
+                penInput?.setEnabled(true)
+            }
+            .setNegativeButton("取消") { _, _ ->
+                penInput?.setEnabled(true)
+            }
+            .setOnDismissListener {
+                penInput?.setEnabled(true)
+            }
+            .show()
     }
 
     private fun syncCurrentPageFromCanvas() {

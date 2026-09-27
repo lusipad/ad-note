@@ -43,11 +43,19 @@ class NoteRepository(private val root: File) {
         atomicWrite(File(dir, "note.json"), NoteJson.encodeToString(Note.serializer(), note))
     }
 
-    fun create(title: String, folder: String, pageWidth: Int, pageHeight: Int, now: Long = System.currentTimeMillis()): Note {
+    fun create(
+        title: String,
+        folder: String,
+        pageWidth: Int,
+        pageHeight: Int,
+        template: com.adnote.model.PageTemplate = com.adnote.model.PageTemplate.BLANK,
+        backgroundColor: String = "#FFFFFF",
+        now: Long = System.currentTimeMillis()
+    ): Note {
         val note = Note(
             title = title,
             folder = folder,
-            pages = listOf(Page(width = pageWidth, height = pageHeight)),
+            pages = listOf(Page(width = pageWidth, height = pageHeight, template = template, backgroundColor = backgroundColor)),
             createdAt = now,
             updatedAt = now,
         )

@@ -117,6 +117,12 @@ class OnyxPenInput : PenInput {
         }
     }
 
+    override fun setStrokeColor(color: Int) {
+        runCatching {
+            touchHelper?.setStrokeColor(color)
+        }
+    }
+
     override fun detach() {
         runCatching {
             touchHelper?.closeRawDrawing()

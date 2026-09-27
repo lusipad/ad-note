@@ -82,14 +82,19 @@ class InkCanvasView @JvmOverloads constructor(
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
 
-        // 1. 绘制背景层：若有 PDF 页面底图则渲染底图，否则纯白底
+        // 1. 绘制背景层：若有 PDF 页面底图则渲染底图，否则根据 PageTemplate 渲染笔记本纸张底质
         val bmp = backgroundBitmap
         if (bmp != null && !bmp.isRecycled) {
             srcRect.set(0, 0, bmp.width, bmp.height)
             dstRect.set(0, 0, width, height)
             canvas.drawBitmap(bmp, srcRect, dstRect, null)
         } else {
-            canvas.drawColor(Color.WHITE)
+            val p = page
+            if (p != null) {
+                PageTemplateRenderer.render(canvas, p.template, p.backgroundColor, width, height)
+            } else {
+                canvas.drawColor(Color.WHITE)
+            }
         }
 
         // 2. 绘制上层手写笔迹涂层
@@ -97,6 +102,7 @@ class InkCanvasView @JvmOverloads constructor(
         val allStrokes = if (transientStroke != null) currentStrokes + transientStroke!! else currentStrokes
 
         for (stroke in allStrokes) {
+            paint.color = parseColorSafe(stroke.color)
             val outline = StrokeGeometry.outline(stroke)
             if (outline.isNotEmpty()) {
                 renderPath.reset()
@@ -111,6 +117,15 @@ class InkCanvasView @JvmOverloads constructor(
                 val r = StrokeGeometry.widthAt(stroke.width, pt.pressure) / 2f
                 canvas.drawCircle(pt.x, pt.y, r, paint)
             }
+        }
+    }
+
+    private fun parseColorSafe(hex: String?): Int {
+        if (hex.isNullOrBlank()) return Color.BLACK
+        return try {
+            Color.parseColor(hex)
+        } catch (_: Exception) {
+            Color.BLACK
         }
     }
 }

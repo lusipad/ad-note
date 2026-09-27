@@ -14,6 +14,8 @@ data class Stroke(
     val points: List<InkPoint>,
     /** 基准笔宽（像素），实际宽度随压感在 [0.4, 1.2] 倍之间变化。 */
     val width: Float = 3f,
+    /** 笔迹颜色 Hex，默认墨黑 #000000。 */
+    val color: String = "#000000",
 )
 
 @Serializable
@@ -23,6 +25,10 @@ data class Page(
     val height: Int,
     val strokes: List<Stroke> = emptyList(),
     val recognizedText: String? = null,
+    /** 笔记本底质模板：空白、横线、方格、点阵、康奈尔。 */
+    val template: PageTemplate = PageTemplate.BLANK,
+    /** 纸张底色 Hex，默认纯白 #FFFFFF。 */
+    val backgroundColor: String = "#FFFFFF",
 )
 
 @Serializable

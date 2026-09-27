@@ -24,5 +24,7 @@ interface PenInput {
 
     fun setStrokeWidth(width: Float)
 
+    fun setStrokeColor(color: Int) {}
+
     fun detach()
 }

@@ -35,16 +35,17 @@ object PdfExporter {
                 val pdfDocPage = document.startPage(pageInfo)
                 val canvas = pdfDocPage.canvas
 
-                // 1. 绘制 PDF 页面底图
+                // 1. 绘制 PDF 页面底图或笔记本底质模板
                 val bmp = pdfRenderer.renderPage(index, page.width, page.height)
                 if (bmp != null && !bmp.isRecycled) {
                     canvas.drawBitmap(bmp, null, Rect(0, 0, page.width, page.height), null)
                 } else {
-                    canvas.drawColor(Color.WHITE)
+                    com.adnote.ui.PageTemplateRenderer.render(canvas, page.template, page.backgroundColor, page.width, page.height)
                 }
 
                 // 2. 绘制上层手写笔迹
                 for (stroke in page.strokes) {
+                    paint.color = try { Color.parseColor(stroke.color) } catch (_: Exception) { Color.BLACK }
                     val outline = StrokeGeometry.outline(stroke)
                     if (outline.isNotEmpty()) {
                         renderPath.reset()

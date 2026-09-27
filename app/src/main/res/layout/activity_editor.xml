@@ -91,6 +91,28 @@
             android:stateListAnimator="@null"
             android:layout_marginEnd="6dp" />
 
+        <!-- 纸张底质模板按钮 -->
+        <Button
+            android:id="@+id/btnPageTemplate"
+            android:layout_width="36dp"
+            android:layout_height="36dp"
+            android:background="@drawable/bg_button_secondary"
+            android:drawableStart="@drawable/ic_paper_template"
+            android:padding="8dp"
+            android:stateListAnimator="@null"
+            android:layout_marginEnd="6dp" />
+
+        <!-- 画笔配置按钮（颜色与粗细） -->
+        <Button
+            android:id="@+id/btnPenSettings"
+            android:layout_width="36dp"
+            android:layout_height="36dp"
+            android:background="@drawable/bg_button_secondary"
+            android:drawableStart="@drawable/ic_pen"
+            android:padding="8dp"
+            android:stateListAnimator="@null"
+            android:layout_marginEnd="6dp" />
+
         <!-- 撤销按钮 -->
         <Button
             android:id="@+id/btnUndo"

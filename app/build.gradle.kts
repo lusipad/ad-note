@@ -13,8 +13,8 @@ android {
         minSdk = 26
         // 自用侧载：targetSdk 低一些，隐藏 API 限制更宽松，Onyx SDK 更稳
         targetSdk = 30
-        versionCode = 4
-        versionName = "0.1.4"
+        versionCode = 5
+        versionName = "0.1.5"
         ndk { abiFilters += listOf("armeabi-v7a", "arm64-v8a") }
     }
 
