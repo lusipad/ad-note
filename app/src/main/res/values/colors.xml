@@ -1,9 +1,39 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="black">#000000</color>
+    <!-- 基础黑白与透明 -->
+    <color name="black">#111827</color>
     <color name="white">#FFFFFF</color>
-    <color name="gray_light">#E0E0E0</color>
-    <color name="gray_mid">#888888</color>
-    <color name="gray_dark">#333333</color>
     <color name="transparent">#00000000</color>
+    <color name="brand_black">#111827</color>
+    <color name="brand_white">#FFFFFF</color>
+
+    <!-- 现代黑白灰阶梯 (Editorial Monochrome) -->
+    <color name="gray_light">#F3F4F6</color>
+    <color name="gray_mid">#9CA3AF</color>
+    <color name="gray_dark">#4B5563</color>
+
+    <!-- 语义化色彩令牌 -->
+    <color name="bg_page">#FFFFFF</color>
+    <color name="bg_surface">#FFFFFF</color>
+    <color name="bg_surface_subtle">#F8F9FA</color>
+    <color name="bg_chip">#F1F3F5</color>
+    <color name="bg_chip_selected">#111827</color>
+    <color name="bg_pressed">#E5E7EB</color>
+
+    <color name="border_hairline">#E5E7EB</color>
+    <color name="border_card">#E2E4E8</color>
+    <color name="border_strong">#111827</color>
+
+    <color name="text_primary">#111827</color>
+    <color name="text_secondary">#4B5563</color>
+    <color name="text_tertiary">#9CA3AF</color>
+    <color name="text_on_dark">#FFFFFF</color>
+
+    <!-- 徽标与状态色 -->
+    <color name="badge_pdf_bg">#1E293B</color>
+    <color name="badge_pdf_text">#FFFFFF</color>
+    <color name="badge_synced_bg">#F3F4F6</color>
+    <color name="badge_synced_text">#374151</color>
+    <color name="badge_pending_bg">#F3F4F6</color>
+    <color name="badge_pending_text">#6B7280</color>
 </resources>

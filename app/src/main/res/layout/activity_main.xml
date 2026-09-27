@@ -3,101 +3,150 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
-    android:background="@color/white"
-    android:padding="12dp">
+    android:background="@color/bg_page"
+    android:paddingHorizontal="16dp"
+    android:paddingTop="12dp"
+    android:paddingBottom="8dp">
 
-    <!-- 顶栏操作区 -->
+    <!-- 顶栏品牌与主操作区 -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="horizontal"
         android:gravity="center_vertical"
-        android:layout_marginBottom="8dp">
+        android:layout_marginBottom="12dp">
 
-        <TextView
+        <!-- 标题与版本品牌 -->
+        <LinearLayout
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:text="AdNote"
-            android:textSize="22sp"
-            android:textStyle="bold"
-            android:textColor="@color/black" />
+            android:orientation="vertical">
 
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="AdNote"
+                android:textSize="22sp"
+                android:textStyle="bold"
+                android:textColor="@color/text_primary"
+                android:letterSpacing="0.02" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="墨水屏手写 · Obsidian 互联"
+                android:textSize="11sp"
+                android:textColor="@color/text_tertiary" />
+        </LinearLayout>
+
+        <!-- 快捷操作按钮组 -->
         <Button
             android:id="@+id/btnNewNote"
             android:layout_width="wrap_content"
-            android:layout_height="38dp"
-            android:text="+ 新建"
-            android:textSize="13sp"
+            android:layout_height="36dp"
+            android:text="新建"
+            android:textSize="12sp"
             android:textColor="@color/white"
-            android:background="@color/black"
+            android:background="@drawable/bg_button_primary"
+            android:drawableStart="@drawable/ic_add"
+            android:drawablePadding="2dp"
             android:paddingHorizontal="10dp"
+            android:stateListAnimator="@null"
             android:layout_marginEnd="6dp" />
 
         <Button
             android:id="@+id/btnImportPdf"
             android:layout_width="wrap_content"
-            android:layout_height="38dp"
-            android:text="导入PDF"
-            android:textSize="13sp"
-            android:textColor="@color/black"
-            android:background="@drawable/bg_border_button"
+            android:layout_height="36dp"
+            android:text="PDF"
+            android:textSize="12sp"
+            android:textColor="@color/text_primary"
+            android:background="@drawable/bg_button_secondary"
+            android:drawableStart="@drawable/ic_picture_as_pdf"
+            android:drawablePadding="2dp"
             android:paddingHorizontal="8dp"
+            android:stateListAnimator="@null"
             android:layout_marginEnd="6dp" />
 
         <Button
             android:id="@+id/btnSync"
-            android:layout_width="wrap_content"
-            android:layout_height="38dp"
-            android:text="同步"
-            android:textSize="13sp"
-            android:textColor="@color/black"
-            android:background="@drawable/bg_border_button"
-            android:paddingHorizontal="10dp"
+            android:layout_width="36dp"
+            android:layout_height="36dp"
+            android:background="@drawable/bg_button_secondary"
+            android:drawableStart="@drawable/ic_sync"
+            android:padding="8dp"
+            android:stateListAnimator="@null"
             android:layout_marginEnd="6dp" />
 
         <Button
             android:id="@+id/btnRefresh"
-            android:layout_width="wrap_content"
-            android:layout_height="38dp"
-            android:text="全刷"
-            android:textSize="13sp"
-            android:textColor="@color/black"
-            android:background="@drawable/bg_border_button"
-            android:paddingHorizontal="8dp"
+            android:layout_width="36dp"
+            android:layout_height="36dp"
+            android:background="@drawable/bg_button_secondary"
+            android:drawableStart="@drawable/ic_refresh_full"
+            android:padding="8dp"
+            android:stateListAnimator="@null"
             android:layout_marginEnd="6dp" />
 
         <Button
             android:id="@+id/btnSettings"
-            android:layout_width="wrap_content"
-            android:layout_height="38dp"
-            android:text="设置"
-            android:textSize="13sp"
-            android:textColor="@color/black"
-            android:background="@drawable/bg_border_button"
-            android:paddingHorizontal="8dp" />
+            android:layout_width="36dp"
+            android:layout_height="36dp"
+            android:background="@drawable/bg_button_secondary"
+            android:drawableStart="@drawable/ic_settings"
+            android:padding="8dp"
+            android:stateListAnimator="@null" />
     </LinearLayout>
 
-    <!-- 搜索输入框 -->
-    <EditText
-        android:id="@+id/etSearch"
+    <!-- 搜索输入栏 -->
+    <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="40dp"
-        android:background="@drawable/bg_edit_text"
-        android:hint="@string/search_hint"
-        android:textSize="14sp"
-        android:textColor="@color/black"
-        android:textColorHint="@color/gray_mid"
-        android:imeOptions="actionSearch"
-        android:singleLine="true"
-        android:layout_marginBottom="8dp" />
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:background="@drawable/bg_search_box"
+        android:paddingHorizontal="10dp"
+        android:layout_marginBottom="10dp">
 
-    <!-- 文件夹与标签水平过滤栏 -->
+        <ImageView
+            android:layout_width="18dp"
+            android:layout_height="18dp"
+            android:src="@drawable/ic_search"
+            android:contentDescription="搜索" />
+
+        <EditText
+            android:id="@+id/etSearch"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:background="@null"
+            android:hint="@string/search_hint"
+            android:textSize="13sp"
+            android:textColor="@color/text_primary"
+            android:textColorHint="@color/text_tertiary"
+            android:imeOptions="actionSearch"
+            android:singleLine="true"
+            android:paddingStart="8dp"
+            android:paddingEnd="4dp" />
+
+        <ImageView
+            android:id="@+id/btnClearSearch"
+            android:layout_width="24dp"
+            android:layout_height="24dp"
+            android:src="@drawable/ic_clear"
+            android:padding="4dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:visibility="gone"
+            android:contentDescription="清除搜索" />
+    </LinearLayout>
+
+    <!-- 文件夹与标签水平过滤胶囊栏 -->
     <HorizontalScrollView
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:scrollbars="none"
-        android:layout_marginBottom="8dp">
+        android:layout_marginBottom="10dp">
 
         <LinearLayout
             android:id="@+id/layoutFilters"
@@ -106,7 +155,7 @@
             android:orientation="horizontal" />
     </HorizontalScrollView>
 
-    <!-- 列表容器 -->
+    <!-- 列表容器与优雅空状态 -->
     <FrameLayout
         android:layout_width="match_parent"
         android:layout_height="0dp"
@@ -116,16 +165,45 @@
             android:id="@+id/rvNotes"
             android:layout_width="match_parent"
             android:layout_height="match_parent"
-            android:scrollbars="vertical" />
+            android:scrollbars="vertical"
+            android:clipToPadding="false"
+            android:paddingTop="2dp"
+            android:paddingBottom="16dp" />
 
-        <TextView
-            android:id="@+id/tvEmpty"
+        <!-- 居中精美空状态 -->
+        <LinearLayout
+            android:id="@+id/layoutEmpty"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_gravity="center"
-            android:text="@string/empty_notes"
-            android:textColor="@color/gray_mid"
-            android:textSize="15sp"
-            android:visibility="gone" />
+            android:gravity="center"
+            android:orientation="vertical"
+            android:visibility="gone">
+
+            <ImageView
+                android:layout_width="72dp"
+                android:layout_height="72dp"
+                android:src="@drawable/ic_empty_notebook"
+                android:contentDescription="暂无笔记" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="开启你的第一篇笔记"
+                android:textSize="16sp"
+                android:textStyle="bold"
+                android:textColor="@color/text_primary"
+                android:layout_marginTop="14dp" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="点击上方「+ 新建」或「PDF」开始书写\n手写内容将自动同步到云端 Obsidian"
+                android:textSize="13sp"
+                android:textColor="@color/text_secondary"
+                android:gravity="center"
+                android:lineSpacingExtra="3dp"
+                android:layout_marginTop="6dp" />
+        </LinearLayout>
     </FrameLayout>
 </LinearLayout>

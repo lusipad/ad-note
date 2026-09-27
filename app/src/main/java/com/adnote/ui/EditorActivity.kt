@@ -83,6 +83,9 @@ class EditorActivity : AppCompatActivity() {
         inkCanvas = findViewById(R.id.inkCanvas)
         layoutRecognized = findViewById(R.id.layoutRecognized)
         tvRecognizedResult = findViewById(R.id.tvRecognizedResult)
+        findViewById<View?>(R.id.btnCloseRecognized)?.setOnClickListener {
+            layoutRecognized.visibility = View.GONE
+        }
 
         btnAddPage.visibility = if (note.isPdf) View.GONE else View.VISIBLE
         updateTitleView()

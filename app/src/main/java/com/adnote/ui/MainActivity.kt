@@ -39,7 +39,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var etSearch: EditText
     private lateinit var layoutFilters: LinearLayout
     private lateinit var rvNotes: RecyclerView
-    private lateinit var tvEmpty: TextView
+    private lateinit var layoutEmpty: View
+    private lateinit var btnClearSearch: View
 
     private val openPdfLauncher = registerForActivityResult(
         androidx.activity.result.contract.ActivityResultContracts.OpenDocument()
@@ -82,9 +83,10 @@ class MainActivity : AppCompatActivity() {
         btnRefresh = findViewById(R.id.btnRefresh)
         btnSettings = findViewById(R.id.btnSettings)
         etSearch = findViewById(R.id.etSearch)
+        btnClearSearch = findViewById(R.id.btnClearSearch)
         layoutFilters = findViewById(R.id.layoutFilters)
         rvNotes = findViewById(R.id.rvNotes)
-        tvEmpty = findViewById(R.id.tvEmpty)
+        layoutEmpty = findViewById(R.id.layoutEmpty)
 
         rvNotes.layoutManager = LinearLayoutManager(this)
         rvNotes.adapter = noteAdapter
@@ -111,9 +113,14 @@ class MainActivity : AppCompatActivity() {
             startActivity(Intent(this, SettingsActivity::class.java))
         }
 
+        btnClearSearch.setOnClickListener {
+            etSearch.setText("")
+        }
+
         etSearch.addTextChangedListener(object : TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
+                btnClearSearch.visibility = if (s.isNullOrEmpty()) View.GONE else View.VISIBLE
                 refreshNotes()
             }
             override fun afterTextChanged(s: Editable?) {}
@@ -128,7 +135,7 @@ class MainActivity : AppCompatActivity() {
             folder = selectedFolder
         )
         noteAdapter.submitList(list)
-        tvEmpty.visibility = if (list.isEmpty()) View.VISIBLE else View.GONE
+        layoutEmpty.visibility = if (list.isEmpty()) View.VISIBLE else View.GONE
     }
 
     private fun refreshFilters() {
@@ -175,21 +182,22 @@ class MainActivity : AppCompatActivity() {
         return Button(this).apply {
             this.text = text
             textSize = 12f
+            stateListAnimator = null
             val lp = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT,
                 (32 * resources.displayMetrics.density).toInt()
             ).apply {
-                marginEnd = (6 * resources.displayMetrics.density).toInt()
+                marginEnd = (8 * resources.displayMetrics.density).toInt()
             }
             layoutParams = lp
-            setPadding((8 * resources.displayMetrics.density).toInt(), 0, (8 * resources.displayMetrics.density).toInt(), 0)
+            setPadding((12 * resources.displayMetrics.density).toInt(), 0, (12 * resources.displayMetrics.density).toInt(), 0)
 
             if (isSelected) {
-                setBackgroundColor(getColor(R.color.black))
+                setBackgroundResource(R.drawable.bg_chip_selected)
                 setTextColor(getColor(R.color.white))
             } else {
-                setBackgroundResource(R.drawable.bg_border_button)
-                setTextColor(getColor(R.color.black))
+                setBackgroundResource(R.drawable.bg_chip_unselected)
+                setTextColor(getColor(R.color.text_primary))
             }
             setOnClickListener { onClick() }
         }
@@ -326,26 +334,30 @@ class NoteAdapter(
 
     inner class ViewHolder(view: View) : RecyclerView.ViewHolder(view) {
         private val tvTitle: TextView = view.findViewById(R.id.tvTitle)
+        private val tvPdfBadge: TextView = view.findViewById(R.id.tvPdfBadge)
         private val tvSyncBadge: TextView = view.findViewById(R.id.tvSyncBadge)
         private val tvFolder: TextView = view.findViewById(R.id.tvFolder)
+        private val tvPageCount: TextView = view.findViewById(R.id.tvPageCount)
         private val tvDate: TextView = view.findViewById(R.id.tvDate)
         private val tvTags: TextView = view.findViewById(R.id.tvTags)
 
         fun bind(note: Note) {
-            tvTitle.text = if (note.isPdf) "📄 [PDF] ${note.title}" else note.title
-            tvFolder.text = "📁 ${note.folder}"
+            tvTitle.text = note.title
+            tvPdfBadge.visibility = if (note.isPdf) View.VISIBLE else View.GONE
+            tvFolder.text = note.folder
+            tvPageCount.text = "${note.pages.size} 页"
             tvDate.text = dateFormat.format(Date(note.updatedAt))
 
             if (note.isDirty || note.sync.lastSyncedAt == 0L) {
                 tvSyncBadge.visibility = View.VISIBLE
-                tvSyncBadge.text = "待同步"
+                tvSyncBadge.text = "● 待同步"
             } else {
                 tvSyncBadge.visibility = View.GONE
             }
 
             if (note.tags.isNotEmpty()) {
                 tvTags.visibility = View.VISIBLE
-                tvTags.text = note.tags.joinToString(" ") { "#$it" }
+                tvTags.text = note.tags.joinToString("  ") { "#$it" }
             } else {
                 tvTags.visibility = View.GONE
             }

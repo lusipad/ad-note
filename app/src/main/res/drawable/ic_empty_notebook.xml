@@ -1,0 +1,48 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="72dp"
+    android:height="72dp"
+    android:viewportWidth="64"
+    android:viewportHeight="64">
+    <!-- 笔记本轮廓 -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="@color/gray_mid"
+        android:strokeWidth="2.5"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M16,10 L44,10 A4,4 0 0,1 48,14 L48,50 A4,4 0 0,1 44,54 L16,54 A4,4 0 0,1 12,50 L12,14 A4,4 0 0,1 16,10 Z" />
+    <!-- 书脊装订线 -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="@color/gray_mid"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"
+        android:pathData="M20,10 L20,54" />
+    <!-- 笔记横线 -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="@color/border_card"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"
+        android:pathData="M26,22 L40,22" />
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="@color/border_card"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"
+        android:pathData="M26,30 L40,30" />
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="@color/border_card"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"
+        android:pathData="M26,38 L34,38" />
+    <!-- 手写笔 -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="@color/text_primary"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M42,42 L52,32 L54,34 L44,44 L40,45 Z" />
+</vector>

@@ -2,7 +2,7 @@
 <ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@color/white"
+    android:background="@color/bg_page"
     android:padding="16dp">
 
     <LinearLayout
@@ -20,13 +20,12 @@
 
             <Button
                 android:id="@+id/btnBack"
-                android:layout_width="wrap_content"
+                android:layout_width="36dp"
                 android:layout_height="36dp"
-                android:text="← 返回"
-                android:textSize="13sp"
-                android:textColor="@color/black"
-                android:background="@drawable/bg_border_button"
-                android:paddingHorizontal="10dp"
+                android:background="@drawable/bg_button_secondary"
+                android:drawableStart="@drawable/ic_arrow_back"
+                android:padding="8dp"
+                android:stateListAnimator="@null"
                 android:layout_marginEnd="12dp" />
 
             <TextView
@@ -35,200 +34,260 @@
                 android:text="@string/settings_title"
                 android:textSize="20sp"
                 android:textStyle="bold"
-                android:textColor="@color/black" />
+                android:textColor="@color/text_primary" />
         </LinearLayout>
 
-        <!-- WebDAV 配置区 -->
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="@string/settings_webdav_header"
-            android:textSize="16sp"
-            android:textStyle="bold"
-            android:textColor="@color/black"
-            android:layout_marginBottom="8dp" />
-
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="@string/settings_server_url"
-            android:textSize="13sp"
-            android:textColor="@color/gray_dark" />
-
-        <EditText
-            android:id="@+id/etServerUrl"
-            android:layout_width="match_parent"
-            android:layout_height="40dp"
-            android:background="@drawable/bg_edit_text"
-            android:hint="@string/settings_server_url_hint"
-            android:textSize="14sp"
-            android:textColor="@color/black"
-            android:textColorHint="@color/gray_mid"
-            android:layout_marginBottom="8dp" />
-
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="@string/settings_username"
-            android:textSize="13sp"
-            android:textColor="@color/gray_dark" />
-
-        <EditText
-            android:id="@+id/etUsername"
-            android:layout_width="match_parent"
-            android:layout_height="40dp"
-            android:background="@drawable/bg_edit_text"
-            android:textSize="14sp"
-            android:textColor="@color/black"
-            android:layout_marginBottom="8dp" />
-
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="@string/settings_password"
-            android:textSize="13sp"
-            android:textColor="@color/gray_dark" />
-
-        <EditText
-            android:id="@+id/etPassword"
-            android:layout_width="match_parent"
-            android:layout_height="40dp"
-            android:background="@drawable/bg_edit_text"
-            android:inputType="textPassword"
-            android:textSize="14sp"
-            android:textColor="@color/black"
-            android:layout_marginBottom="8dp" />
-
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="@string/settings_remote_dir"
-            android:textSize="13sp"
-            android:textColor="@color/gray_dark" />
-
-        <EditText
-            android:id="@+id/etRemoteDir"
-            android:layout_width="match_parent"
-            android:layout_height="40dp"
-            android:background="@drawable/bg_edit_text"
-            android:text="AdNote"
-            android:textSize="14sp"
-            android:textColor="@color/black"
-            android:layout_marginBottom="12dp" />
-
+        <!-- 卡片 1：WebDAV 云端同步 -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:layout_marginBottom="24dp">
+            android:orientation="vertical"
+            android:background="@drawable/bg_card_settings"
+            android:layout_marginBottom="16dp">
 
-            <Button
-                android:id="@+id/btnTestConnection"
-                android:layout_width="0dp"
-                android:layout_height="40dp"
-                android:layout_weight="1"
-                android:text="@string/settings_test_connection"
-                android:textSize="13sp"
-                android:textColor="@color/black"
-                android:background="@drawable/bg_border_button"
-                android:layout_marginEnd="8dp" />
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/settings_webdav_header"
+                android:textSize="16sp"
+                android:textStyle="bold"
+                android:textColor="@color/text_primary" />
 
-            <Button
-                android:id="@+id/btnSaveSettings"
-                android:layout_width="0dp"
-                android:layout_height="40dp"
-                android:layout_weight="1"
-                android:text="@string/settings_save"
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="配置坚果云、NAS 等 WebDAV，自动双向同步为 Obsidian 兼容库"
+                android:textSize="12sp"
+                android:textColor="@color/text_tertiary"
+                android:layout_marginTop="2dp"
+                android:layout_marginBottom="14dp" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/settings_server_url"
+                android:textSize="12sp"
+                android:textStyle="bold"
+                android:textColor="@color/text_secondary" />
+
+            <EditText
+                android:id="@+id/etServerUrl"
+                android:layout_width="match_parent"
+                android:layout_height="42dp"
+                android:background="@drawable/bg_edit_text"
+                android:hint="@string/settings_server_url_hint"
                 android:textSize="13sp"
-                android:textColor="@color/white"
-                android:background="@color/black" />
+                android:textColor="@color/text_primary"
+                android:textColorHint="@color/text_tertiary"
+                android:singleLine="true"
+                android:layout_marginTop="4dp"
+                android:layout_marginBottom="10dp" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/settings_username"
+                android:textSize="12sp"
+                android:textStyle="bold"
+                android:textColor="@color/text_secondary" />
+
+            <EditText
+                android:id="@+id/etUsername"
+                android:layout_width="match_parent"
+                android:layout_height="42dp"
+                android:background="@drawable/bg_edit_text"
+                android:textSize="13sp"
+                android:textColor="@color/text_primary"
+                android:singleLine="true"
+                android:layout_marginTop="4dp"
+                android:layout_marginBottom="10dp" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/settings_password"
+                android:textSize="12sp"
+                android:textStyle="bold"
+                android:textColor="@color/text_secondary" />
+
+            <EditText
+                android:id="@+id/etPassword"
+                android:layout_width="match_parent"
+                android:layout_height="42dp"
+                android:background="@drawable/bg_edit_text"
+                android:inputType="textPassword"
+                android:textSize="13sp"
+                android:textColor="@color/text_primary"
+                android:layout_marginTop="4dp"
+                android:layout_marginBottom="10dp" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/settings_remote_dir"
+                android:textSize="12sp"
+                android:textStyle="bold"
+                android:textColor="@color/text_secondary" />
+
+            <EditText
+                android:id="@+id/etRemoteDir"
+                android:layout_width="match_parent"
+                android:layout_height="42dp"
+                android:background="@drawable/bg_edit_text"
+                android:text="AdNote"
+                android:textSize="13sp"
+                android:textColor="@color/text_primary"
+                android:singleLine="true"
+                android:layout_marginTop="4dp"
+                android:layout_marginBottom="14dp" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal">
+
+                <Button
+                    android:id="@+id/btnTestConnection"
+                    android:layout_width="0dp"
+                    android:layout_height="38dp"
+                    android:layout_weight="1"
+                    android:text="@string/settings_test_connection"
+                    android:textSize="13sp"
+                    android:textColor="@color/text_primary"
+                    android:background="@drawable/bg_button_secondary"
+                    android:stateListAnimator="@null"
+                    android:layout_marginEnd="8dp" />
+
+                <Button
+                    android:id="@+id/btnSaveSettings"
+                    android:layout_width="0dp"
+                    android:layout_height="38dp"
+                    android:layout_weight="1"
+                    android:text="@string/settings_save"
+                    android:textSize="13sp"
+                    android:textColor="@color/white"
+                    android:background="@drawable/bg_button_primary"
+                    android:stateListAnimator="@null" />
+            </LinearLayout>
         </LinearLayout>
 
-        <!-- 设备与画笔 -->
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="@string/settings_device_header"
-            android:textSize="16sp"
-            android:textStyle="bold"
-            android:textColor="@color/black"
-            android:layout_marginBottom="8dp" />
-
-        <TextView
-            android:id="@+id/tvDeviceInfo"
+        <!-- 卡片 2：设备与画笔适配 -->
+        <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="设备检测：检测中..."
-            android:textSize="14sp"
-            android:textColor="@color/black"
-            android:layout_marginBottom="6dp" />
+            android:orientation="vertical"
+            android:background="@drawable/bg_card_settings"
+            android:layout_marginBottom="16dp">
 
-        <TextView
-            android:id="@+id/tvPenStatus"
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/settings_device_header"
+                android:textSize="16sp"
+                android:textStyle="bold"
+                android:textColor="@color/text_primary" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="智能识别墨水屏与高刷平板，调度最佳低延迟通道"
+                android:textSize="12sp"
+                android:textColor="@color/text_tertiary"
+                android:layout_marginTop="2dp"
+                android:layout_marginBottom="12dp" />
+
+            <TextView
+                android:id="@+id/tvDeviceInfo"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="设备检测：检测中..."
+                android:textSize="13sp"
+                android:textColor="@color/text_primary"
+                android:layout_marginBottom="6dp" />
+
+            <TextView
+                android:id="@+id/tvPenStatus"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="画笔通道：检测中..."
+                android:textSize="13sp"
+                android:textColor="@color/text_secondary"
+                android:layout_marginBottom="12dp" />
+
+            <CheckBox
+                android:id="@+id/cbStylusOnly"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="防误触模式（严格仅手写笔响应，手掌压屏不误画）"
+                android:textSize="13sp"
+                android:textColor="@color/text_primary"
+                android:layout_marginBottom="6dp" />
+
+            <CheckBox
+                android:id="@+id/cbPreferOnyx"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="优先使用文石硬件直绘低延迟通道"
+                android:textSize="13sp"
+                android:textColor="@color/text_primary"
+                android:layout_marginBottom="12dp" />
+
+            <Button
+                android:id="@+id/btnFullRefreshTest"
+                android:layout_width="wrap_content"
+                android:layout_height="36dp"
+                android:text="@string/settings_full_refresh_test"
+                android:textSize="12sp"
+                android:textColor="@color/text_primary"
+                android:background="@drawable/bg_button_secondary"
+                android:paddingHorizontal="14dp"
+                android:stateListAnimator="@null" />
+        </LinearLayout>
+
+        <!-- 卡片 3：离线手写模型 -->
+        <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="画笔通道：检测中..."
-            android:textSize="14sp"
-            android:textColor="@color/gray_dark"
-            android:layout_marginBottom="8dp" />
+            android:orientation="vertical"
+            android:background="@drawable/bg_card_settings"
+            android:layout_marginBottom="24dp">
 
-        <CheckBox
-            android:id="@+id/cbStylusOnly"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="防误触模式（仅手写笔书写，忽略手掌/手指接触）"
-            android:textSize="13sp"
-            android:textColor="@color/black"
-            android:layout_marginBottom="6dp" />
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/settings_model_header"
+                android:textSize="16sp"
+                android:textStyle="bold"
+                android:textColor="@color/text_primary" />
 
-        <CheckBox
-            android:id="@+id/cbPreferOnyx"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="优先使用文石硬件直绘低延迟通道"
-            android:textSize="13sp"
-            android:textColor="@color/black"
-            android:layout_marginBottom="12dp" />
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Google ML Kit 离线中文手写识别（zh-Hani-CN 模型）"
+                android:textSize="12sp"
+                android:textColor="@color/text_tertiary"
+                android:layout_marginTop="2dp"
+                android:layout_marginBottom="12dp" />
 
-        <Button
-            android:id="@+id/btnFullRefreshTest"
-            android:layout_width="wrap_content"
-            android:layout_height="36dp"
-            android:text="@string/settings_full_refresh_test"
-            android:textSize="13sp"
-            android:textColor="@color/black"
-            android:background="@drawable/bg_border_button"
-            android:paddingHorizontal="12dp"
-            android:layout_marginBottom="24dp" />
+            <TextView
+                android:id="@+id/tvModelStatus"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="模型状态：检测中..."
+                android:textSize="13sp"
+                android:textColor="@color/text_secondary"
+                android:layout_marginBottom="12dp" />
 
-        <!-- 离线手写模型 -->
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="@string/settings_model_header"
-            android:textSize="16sp"
-            android:textStyle="bold"
-            android:textColor="@color/black"
-            android:layout_marginBottom="8dp" />
-
-        <TextView
-            android:id="@+id/tvModelStatus"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="模型状态：检测中..."
-            android:textSize="14sp"
-            android:textColor="@color/gray_dark"
-            android:layout_marginBottom="8dp" />
-
-        <Button
-            android:id="@+id/btnDownloadModel"
-            android:layout_width="wrap_content"
-            android:layout_height="36dp"
-            android:text="@string/settings_download_model"
-            android:textSize="13sp"
-            android:textColor="@color/black"
-            android:background="@drawable/bg_border_button"
-            android:paddingHorizontal="12dp"
-            android:layout_marginBottom="24dp" />
+            <Button
+                android:id="@+id/btnDownloadModel"
+                android:layout_width="wrap_content"
+                android:layout_height="36dp"
+                android:text="@string/settings_download_model"
+                android:textSize="12sp"
+                android:textColor="@color/text_primary"
+                android:background="@drawable/bg_button_secondary"
+                android:paddingHorizontal="14dp"
+                android:stateListAnimator="@null" />
+        </LinearLayout>
     </LinearLayout>
 </ScrollView>

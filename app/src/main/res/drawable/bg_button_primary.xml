@@ -1,12 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <ripple xmlns:android="http://schemas.android.com/apk/res/android"
-    android:color="@color/bg_pressed">
+    android:color="@color/gray_dark">
     <item>
         <shape android:shape="rectangle">
-            <solid android:color="@color/bg_surface" />
-            <stroke
-                android:width="1dp"
-                android:color="@color/border_card" />
+            <solid android:color="@color/brand_black" />
             <corners android:radius="8dp" />
         </shape>
     </item>

@@ -4,68 +4,102 @@
     android:layout_height="wrap_content"
     android:orientation="vertical"
     android:background="@drawable/bg_card_note"
-    android:padding="12dp"
-    android:layout_marginBottom="8dp">
+    android:padding="14dp"
+    android:layout_marginBottom="10dp"
+    android:clickable="true"
+    android:focusable="true">
 
+    <!-- 标题与状态徽标栏 -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="horizontal"
         android:gravity="center_vertical">
 
+        <!-- 标题 -->
         <TextView
             android:id="@+id/tvTitle"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
             android:text="笔记标题"
-            android:textSize="17sp"
+            android:textSize="16sp"
             android:textStyle="bold"
-            android:textColor="@color/black" />
+            android:textColor="@color/text_primary"
+            android:singleLine="true"
+            android:ellipsize="end" />
 
+        <!-- PDF 专属徽标 -->
+        <TextView
+            android:id="@+id/tvPdfBadge"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="PDF"
+            android:textSize="10sp"
+            android:textStyle="bold"
+            android:textColor="@color/badge_pdf_text"
+            android:background="@drawable/bg_badge_pdf"
+            android:layout_marginStart="8dp"
+            android:layout_marginEnd="6dp"
+            android:visibility="gone" />
+
+        <!-- 同步状态胶囊 -->
         <TextView
             android:id="@+id/tvSyncBadge"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="未同步"
+            android:text="● 待同步"
             android:textSize="11sp"
-            android:textColor="@color/black"
-            android:background="@drawable/bg_border_button"
-            android:paddingHorizontal="4dp"
-            android:paddingVertical="1dp" />
+            android:textColor="@color/text_secondary"
+            android:background="@drawable/bg_badge_sync"
+            android:visibility="gone" />
     </LinearLayout>
 
+    <!-- 元数据行：文件夹、页数与最后更新时间 -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="horizontal"
-        android:layout_marginTop="4dp">
+        android:gravity="center_vertical"
+        android:layout_marginTop="6dp">
 
         <TextView
             android:id="@+id/tvFolder"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="📁 收件箱"
+            android:text="收件箱"
             android:textSize="12sp"
-            android:textColor="@color/gray_dark"
+            android:textColor="@color/text_secondary"
+            android:drawableStart="@drawable/ic_folder"
+            android:drawablePadding="4dp"
+            android:layout_marginEnd="12dp" />
+
+        <TextView
+            android:id="@+id/tvPageCount"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="1 页"
+            android:textSize="12sp"
+            android:textColor="@color/text_tertiary"
             android:layout_marginEnd="12dp" />
 
         <TextView
             android:id="@+id/tvDate"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="2026-09-26 12:00"
+            android:text="2026-09-27 12:00"
             android:textSize="12sp"
-            android:textColor="@color/gray_mid" />
+            android:textColor="@color/text_tertiary" />
     </LinearLayout>
 
+    <!-- 标签展示行 -->
     <TextView
         android:id="@+id/tvTags"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:text="#工作 #周会"
         android:textSize="12sp"
-        android:textColor="@color/black"
-        android:layout_marginTop="4dp"
+        android:textColor="@color/text_secondary"
+        android:layout_marginTop="6dp"
         android:visibility="gone" />
 </LinearLayout>
