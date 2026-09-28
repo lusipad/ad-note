@@ -42,6 +42,40 @@ jobs:
           path: app/build/outputs/apk/*/*.apk
           retention-days: 14
 
+      - name: Read app version
+        id: version
+        run: echo "name=$(grep -oP 'versionName = "\K[^"]+' app/build.gradle.kts)" >> "$GITHUB_OUTPUT"
+
+      # 合并到 main 时，如果 versionName 对应的版本还没有完整发布，就自动打标签并发布 Release。
+      # 只有 Release 已存在且两个 APK 都已上传才算发布完成：上次中途失败（标签已建、附件没传完）时，重跑会补齐。
+      - name: Check whether this version is already released
+        id: releasecheck
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: v${{ steps.version.outputs.name }}
+        run: |
+          assets=$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name' 2>/dev/null || true)
+          if echo "$assets" | grep -qx 'app-release.apk' && echo "$assets" | grep -qx 'app-debug.apk'; then
+            echo "complete=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "complete=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Publish release for new version on main
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.releasecheck.outputs.complete == 'false'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.version.outputs.name }}
+          target_commitish: ${{ github.sha }}
+          name: AdNote v${{ steps.version.outputs.name }}
+          files: |
+            app/build/outputs/apk/release/app-release.apk
+            app/build/outputs/apk/debug/app-debug.apk
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Publish GitHub Release
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
