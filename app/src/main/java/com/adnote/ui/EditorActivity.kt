@@ -120,6 +120,12 @@ class EditorActivity : AppCompatActivity() {
 
     private var selection: Selection = Selection.EMPTY
 
+    /** 插入图片、粘贴、笔身按键套索时自动切到套索前的工具；选区结束后切回去。 */
+    private var toolBeforeAutoLasso: Tool? = null
+
+    /** 上次交给直绘层的书写区域与排除区域，没变化时不重复设置。 */
+    private var lastPenRegion: Pair<Rect, List<Rect>>? = null
+
     private var resumed = false
 
     /** 当前打开的对话框/弹出菜单层数（可能嵌套，如页面概览里再弹菜单）。 */
@@ -299,6 +305,7 @@ class EditorActivity : AppCompatActivity() {
 
             override fun onViewportChanged(viewport: Viewport) {
                 applyPenInputStyle()
+                // 其中会更新书写区域：缩放、平移后页面在屏幕上的位置变了
                 updateZoomLabel()
             }
 
@@ -325,12 +332,13 @@ class EditorActivity : AppCompatActivity() {
     }
 
     private fun setupPenInput() {
-        val rect = Rect()
-        inkCanvas.getGlobalVisibleRect(rect)
+        // 相对画布视图的坐标，只包含页面本身（不含四周灰边）
+        val rect = inkCanvas.visiblePageRect()
         if (rect.isEmpty) rect.set(0, 0, inkCanvas.width, inkCanvas.height)
 
         val input = PenInputFactory.create(preferOnyx = app.preferOnyx, stylusOnly = app.stylusOnly)
         penInput = input
+        lastPenRegion = null
 
         val listener = object : PenInputListener {
             override fun onPenDown() = inkCanvas.setPenDown(true)
@@ -340,7 +348,7 @@ class EditorActivity : AppCompatActivity() {
                 val pts = inkCanvas.toPage(points)
                 when (tools.tool) {
                     Tool.PEN, Tool.HIGHLIGHTER, Tool.SHAPE ->
-                        inkCanvas.setTransientStroke(if (pts.isEmpty()) null else newStroke(pts))
+                        inkCanvas.setTransientStroke(if (pts.isEmpty() || !startsOnPage(pts)) null else newStroke(pts))
                     Tool.ERASER -> liveErase(pts)
                     Tool.LASSO -> inkCanvas.setLassoPath(pts)
                     Tool.TEXT -> Unit
@@ -352,6 +360,13 @@ class EditorActivity : AppCompatActivity() {
                 inkCanvas.setTransientStroke(null)
                 if (points.isEmpty()) return
                 val pts = inkCanvas.toPage(points)
+                val inkTool = tools.tool == Tool.PEN || tools.tool == Tool.HIGHLIGHTER ||
+                    tools.tool == Tool.SHAPE || tools.tool == Tool.TEXT
+                if (inkTool && !startsOnPage(pts)) {
+                    // 从页面外的灰边落笔：不属于页面，忽略（并刷掉直绘层可能画出的痕迹）
+                    withPenPaused { inkCanvas.invalidate() }
+                    return
+                }
                 when (tools.tool) {
                     Tool.PEN, Tool.HIGHLIGHTER, Tool.SHAPE -> handleInk(pts)
                     Tool.ERASER -> finishErase(pts)
@@ -393,11 +408,13 @@ class EditorActivity : AppCompatActivity() {
                 val pts = inkCanvas.toPage(points)
                 when (app.stylusButtonAction) {
                     StylusButtonAction.LASSO -> {
-                        if (tools.tool != Tool.LASSO) {
-                            tools = tools.copy(tool = Tool.LASSO)
-                            applyTools()
-                        }
+                        switchToLassoTemporarily()
                         finishLasso(pts)
+                        // 没圈中任何东西时不会进入选区，直接回到原来的工具
+                        if (selection.isEmpty) {
+                            toolBeforeAutoLasso?.let { tools = tools.copy(tool = it); applyTools() }
+                            toolBeforeAutoLasso = null
+                        }
                     }
                     StylusButtonAction.HIGHLIGHTER -> commitStroke(highlighterStroke(pts), pause = true)
                     else -> Unit
@@ -429,6 +446,8 @@ class EditorActivity : AppCompatActivity() {
     // region 工具
 
     private fun selectTool(tool: Tool) {
+        // 用户自己换了工具，就不再自动切回
+        toolBeforeAutoLasso = null
         if (tools.tool == tool) return
         tools = tools.copy(tool = tool)
         applyTools()
@@ -528,6 +547,9 @@ class EditorActivity : AppCompatActivity() {
     }
 
     private fun newStroke(points: List<InkPoint>): Stroke = tools.newStroke(points).copy(layer = activeLayer())
+
+    private fun startsOnPage(points: List<InkPoint>): Boolean =
+        inkCanvas.isOnPage(points[0].x, points[0].y, slop = 4f / inkCanvas.viewport.scale)
 
     private fun highlighterStroke(points: List<InkPoint>): Stroke =
         Stroke(points = points, width = tools.highlighterWidth, color = tools.highlighterColor,
@@ -750,13 +772,30 @@ class EditorActivity : AppCompatActivity() {
         updateExcludeRects()
     }
 
-    private fun exitSelection() {
+    /** 结束选区。[restoreTool] 为 false 时（紧接着要选中新内容）保持套索，不切回原来的工具。 */
+    private fun exitSelection(restoreTool: Boolean = true) {
         if (selection.isEmpty) return
         selection = Selection.EMPTY
         inkCanvas.clearSelection()
         layoutSelectionBar.visibility = View.GONE
         refreshPenEnabled()
         updateExcludeRects()
+        // 自动切到套索的，处理完选区后回到原来的工具，否则接着写字会没反应
+        if (!restoreTool) return
+        val previous = toolBeforeAutoLasso
+        toolBeforeAutoLasso = null
+        if (previous != null && tools.tool == Tool.LASSO) {
+            tools = tools.copy(tool = previous)
+            applyTools()
+        }
+    }
+
+    /** 自动切到套索（插图、粘贴等），记住原来的工具。 */
+    private fun switchToLassoTemporarily() {
+        if (tools.tool == Tool.LASSO) return
+        toolBeforeAutoLasso = tools.tool
+        tools = tools.copy(tool = Tool.LASSO)
+        applyTools()
     }
 
     private fun deleteSelection() {
@@ -780,7 +819,7 @@ class EditorActivity : AppCompatActivity() {
         val before = page()
         val clip = SelectionOps.copy(before, selection, note.id)
         val (after, newSel) = SelectionOps.paste(before, clip, activeLayer(), 40f, 40f)
-        exitSelection()
+        exitSelection(restoreTool = false)
         commitPage(before, after)
         enterSelection(newSel)
     }
@@ -796,10 +835,7 @@ class EditorActivity : AppCompatActivity() {
         val (after, newSel) = SelectionOps.paste(before, clip, activeLayer(), dx, dy) { path ->
             repo.copyAsset(clip.sourceNoteId, path, note.id)
         }
-        if (tools.tool != Tool.LASSO) {
-            tools = tools.copy(tool = Tool.LASSO)
-            applyTools()
-        }
+        switchToLassoTemporarily()
         commitPage(before, after)
         enterSelection(newSel)
     }
@@ -983,10 +1019,7 @@ class EditorActivity : AppCompatActivity() {
                 path = imported.path, x = (cx - w / 2f).coerceAtLeast(0f), y = (cy - h / 2f).coerceAtLeast(0f),
                 width = w, height = h, layer = activeLayer(),
             )
-            if (tools.tool != Tool.LASSO) {
-                tools = tools.copy(tool = Tool.LASSO)
-                applyTools()
-            }
+            switchToLassoTemporarily()
             commitPage(before, before.copy(images = before.images + item))
             enterSelection(Selection(images = setOf(item.id)))
         }
@@ -1015,8 +1048,9 @@ class EditorActivity : AppCompatActivity() {
         val cur = note.pages[currentPageIndex]
         withPenPaused { inkCanvas.updatePage(page().let { c -> cur.copy(strokes = c.strokes, texts = c.texts, images = c.images, layers = c.layers) }) }
         updatePageIndicator()
-        // 纸色、页面尺寸可能变了：橡皮直绘色与笔宽缩放随之更新
+        // 纸色、页面尺寸可能变了：橡皮直绘色、笔宽缩放与书写区域随之更新
         applyPenInputStyle()
+        updateExcludeRects()
     }
 
     private fun toggleRuler() {
@@ -1267,6 +1301,14 @@ class EditorActivity : AppCompatActivity() {
         if (index != currentPageIndex) autoRecognize(currentPageIndex)
         exitSelection()
         currentPageIndex = index
+        // 空白页按画布比例调整高度，整页铺满、四周没有写不进去的灰边。
+        // 本次打开后擦空的页面还能撤销回原来的内容，尺寸保持不变
+        val canUndo = histories[note.pages[index].id]?.canUndo == true
+        val fitted = if (canUndo) note else PageOps.fitEmptyPageToCanvas(note, index, inkCanvas.width, inkCanvas.height)
+        if (fitted !== note) {
+            note = fitted
+            saveNow()
+        }
         val page = note.pages[index]
         inkCanvas.setPage(page)
 
@@ -1784,14 +1826,30 @@ class EditorActivity : AppCompatActivity() {
         refreshPenEnabled()
     }
 
-    /** 浮在画布上的面板不参与文石直绘，笔点上去就是点按钮。 */
+    /**
+     * 更新直绘层的书写区域：只包含页面本身（缩放、翻页、页面尺寸变化后都要更新），
+     * 并排除浮在画布上的面板，笔点上去就是点按钮。坐标都相对画布视图。
+     */
     private fun updateExcludeRects() {
         inkCanvas.post {
+            val input = penInput ?: return@post
+            val origin = IntArray(2).also { inkCanvas.getLocationOnScreen(it) }
             val rects = listOf(layoutRecognized, layoutSelectionBar, layoutRecordingBar, tvZoom)
-                .filter { it.visibility == View.VISIBLE }
-                .map { v -> Rect().also { v.getGlobalVisibleRect(it) } }
-                .filterNot { it.isEmpty }
-            penInput?.setExcludeRects(rects)
+                .filter { it.visibility == View.VISIBLE && it.width > 0 }
+                .map { v ->
+                    val loc = IntArray(2).also { v.getLocationOnScreen(it) }
+                    val l = loc[0] - origin[0]; val t = loc[1] - origin[1]
+                    Rect(l, t, l + v.width, t + v.height)
+                }
+            val limit = inkCanvas.visiblePageRect()
+            val region = limit to rects
+            // 没变化就不动直绘层：每次暂停、恢复直绘在墨水屏上都可能多刷一次
+            if (region == lastPenRegion) return@post
+            lastPenRegion = region
+            withPenPaused {
+                if (!limit.isEmpty) input.setLimitRect(limit)
+                input.setExcludeRects(rects)
+            }
         }
     }
 

@@ -159,6 +159,11 @@ class OnyxPenInput : PenInput {
         }.onFailure { Log.w("OnyxPenInput", "当前 SDK 不支持关闭直绘渲染: ${it.message}") }
     }
 
+    override fun setLimitRect(rect: Rect) {
+        runCatching { touchHelper?.setLimitRect(listOf(rect)) }
+            .onFailure { Log.w("OnyxPenInput", "更新书写区域失败: ${it.message}") }
+    }
+
     override fun setExcludeRects(rects: List<Rect>) {
         val helper = touchHelper ?: return
         runCatching {

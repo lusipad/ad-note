@@ -242,6 +242,25 @@ class InkCanvasView @JvmOverloads constructor(
         return points.map { it.copy(x = vp.toPageX(it.x), y = vp.toPageY(it.y)) }
     }
 
+    /** 页面在画布上的可见区域（视图坐标）；页面四周的灰边不在其中。 */
+    fun visiblePageRect(): android.graphics.Rect {
+        val vp = viewport
+        val p = page
+        if (p == null || width <= 0 || height <= 0) return android.graphics.Rect(0, 0, width, height)
+        return android.graphics.Rect(
+            vp.toViewX(0f).toInt().coerceIn(0, width),
+            vp.toViewY(0f).toInt().coerceIn(0, height),
+            kotlin.math.ceil(vp.toViewX(p.width.toFloat())).toInt().coerceIn(0, width),
+            kotlin.math.ceil(vp.toViewY(p.height.toFloat())).toInt().coerceIn(0, height),
+        )
+    }
+
+    /** 页面坐标是否落在页面内（容差 [slop] 页面像素）。 */
+    fun isOnPage(x: Float, y: Float, slop: Float = 0f): Boolean {
+        val p = page ?: return false
+        return x >= -slop && y >= -slop && x <= p.width + slop && y <= p.height + slop
+    }
+
     /** 单指按在直尺上时由画布处理（拖动直尺），而不是书写。 */
     fun wantsFinger(e: MotionEvent): Boolean =
         ruler?.contains(viewport.toPageX(e.x), viewport.toPageY(e.y)) == true
@@ -292,6 +311,8 @@ class InkCanvasView @JvmOverloads constructor(
         val p = page
         viewport = if (p != null) Viewport(w, h, p.width, p.height).clamped() else Viewport(w, h, w, h)
         invalidateContent()
+        // 画布尺寸变了（工具栏换行、分屏等），页面在屏幕上的位置随之改变
+        if (p != null && oldw > 0 && oldh > 0) listener?.onViewportChanged(viewport)
     }
 
     private fun ensureCache() {
@@ -347,7 +368,14 @@ class InkCanvasView @JvmOverloads constructor(
             SelectionOps.bounds(selPage, selection)?.let { drawSelectionFrame(canvas, it, scale) }
         }
 
-        transientStroke?.let { renderer.drawStroke(canvas, it) }
+        transientStroke?.let { s ->
+            // 书写预览与落笔后的效果一致：页面外的部分不显示
+            val p = page
+            canvas.save()
+            if (p != null) canvas.clipRect(0f, 0f, p.width.toFloat(), p.height.toFloat())
+            renderer.drawStroke(canvas, s)
+            canvas.restore()
+        }
 
         if (lassoPoints.size > 1) {
             setDashed(overlayStroke, scale)

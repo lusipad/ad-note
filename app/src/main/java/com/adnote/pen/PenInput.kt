@@ -55,7 +55,13 @@ interface PenInput {
      */
     fun setRenderEnabled(enabled: Boolean) {}
 
-    /** 画布上浮动面板所在的屏幕区域，直绘层不应拦截这些区域的笔触。 */
+    /**
+     * 可书写区域（相对画布视图的坐标）。页面四周的灰边不属于页面，不接收笔迹。
+     * 文石 TouchHelper 要求相对视图的坐标，不能传屏幕坐标，否则整个区域会向下错位。
+     */
+    fun setLimitRect(rect: Rect) {}
+
+    /** 画布上浮动面板所在区域（相对画布视图的坐标），直绘层不应拦截这些区域的笔触。 */
     fun setExcludeRects(rects: List<Rect>) {}
 
     /**

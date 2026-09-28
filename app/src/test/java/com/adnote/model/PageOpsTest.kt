@@ -160,3 +160,45 @@ class LegacyCoordsTest {
         tmp.deleteRecursively()
     }
 }
+
+class FitEmptyPageTest {
+    private fun note(page: Page, pdf: Boolean = false) = Note(
+        title = "t", pages = listOf(page), createdAt = 0, updatedAt = 0,
+        pdfPath = if (pdf) "document.pdf" else null,
+    )
+
+    @Test
+    fun emptyStandardPageAdoptsCanvasAspect() {
+        val out = PageOps.fitEmptyPageToCanvas(note(Page(width = 1404, height = 1872)), 0, 1404, 1650)
+        assertEquals(1404, out.pages[0].width)
+        assertEquals(1650, out.pages[0].height)
+        // 调整后整页刚好铺满画布：不留灰边、不需要滚动
+        val vp = Viewport(1404, 1650, out.pages[0].width, out.pages[0].height).clamped()
+        assertEquals(1f, vp.scale, 0.001f)
+        assertEquals(0f, vp.panX, 0.01f)
+    }
+
+    @Test
+    fun pagesWithContentKeepTheirSize() {
+        val withInk = Page(width = 1404, height = 1872, strokes = listOf(Stroke(points = listOf(InkPoint(1f, 1f)))))
+        val n = note(withInk)
+        assertSame(n, PageOps.fitEmptyPageToCanvas(n, 0, 1404, 1650))
+        val withText = note(Page(width = 1404, height = 1872, texts = listOf(TextBox(x = 0f, y = 0f, text = "a"))))
+        assertSame(withText, PageOps.fitEmptyPageToCanvas(withText, 0, 1404, 1650))
+    }
+
+    @Test
+    fun pdfLandscapeAndLongPagesAreLeftAlone() {
+        val pdf = note(Page(width = 1190, height = 1684), pdf = true)
+        assertSame(pdf, PageOps.fitEmptyPageToCanvas(pdf, 0, 1404, 1650))
+        // 页面被切成横向，而画布是竖向：保持用户选的方向
+        val landscape = note(Page(width = 1872, height = 1404))
+        assertSame(landscape, PageOps.fitEmptyPageToCanvas(landscape, 0, 1404, 1650))
+        // 向下延长过的长页
+        val long = note(Page(width = 1404, height = 1872 * 2))
+        assertSame(long, PageOps.fitEmptyPageToCanvas(long, 0, 1404, 1650))
+        // 已经匹配时不改
+        val same = note(Page(width = 1404, height = 1651))
+        assertSame(same, PageOps.fitEmptyPageToCanvas(same, 0, 1404, 1650))
+    }
+}
