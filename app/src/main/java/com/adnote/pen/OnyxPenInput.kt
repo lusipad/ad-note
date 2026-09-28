@@ -41,6 +41,7 @@ class OnyxPenInput : PenInput {
                     currentStrokePoints.clear()
                     currentStrokePoints.add(touchPoint.toInkPoint())
                 }
+                mainHandler.post { this@OnyxPenInput.listener?.onPenDown() }
             }
 
             override fun onEndRawDrawing(b: Boolean, touchPoint: TouchPoint) {
@@ -72,6 +73,7 @@ class OnyxPenInput : PenInput {
                     currentErasePoints.clear()
                     currentErasePoints.add(touchPoint.toInkPoint())
                 }
+                mainHandler.post { this@OnyxPenInput.listener?.onPenDown() }
             }
 
             override fun onEndRawErasing(b: Boolean, touchPoint: TouchPoint) {

@@ -431,10 +431,40 @@ class InkCanvasView @JvmOverloads constructor(
     private var lastAngle = 0f
     private var lastTapTime = 0L
 
+    /** 这一次触摸被判定为手掌/书写时的误触，整次忽略直到抬起。 */
+    private var rejected = false
+    /** 单指移动超过触摸阈值后才开始平移，避免手指微小抖动反复重绘（墨水屏上就是不停刷新）。 */
+    private var panStarted = false
+    private val touchSlop = android.view.ViewConfiguration.get(context).scaledTouchSlop * 2f
+    private var penDown = false
+    private var lastPenTime = 0L
+
     private var selStartX = 0f
     private var selStartY = 0f
     private var selPivotX = 0f
     private var selPivotY = 0f
+
+    /** 笔按下/抬起。笔在屏幕上时（以及抬起后片刻）手指和手掌的触摸一律忽略。 */
+    fun setPenDown(down: Boolean) {
+        // 只有真正按下过笔才记时间：手指书写被取消时也会走到「抬起」，不能把之后的双指手势当成误触
+        if (!down && !penDown) return
+        penDown = down
+        lastPenTime = android.os.SystemClock.uptimeMillis()
+    }
+
+    /** 笔尖悬停在屏幕上方：说明手正准备书写，同样屏蔽手掌。 */
+    fun notePenNear() {
+        lastPenTime = android.os.SystemClock.uptimeMillis()
+    }
+
+    private fun penRecentlyActive(): Boolean =
+        penDown || android.os.SystemClock.uptimeMillis() - lastPenTime < PALM_WINDOW_MS
+
+    /** 接触面积明显大于指尖，判定为手掌（部分设备不上报面积，此时只靠笔的状态判断）。 */
+    private fun isPalm(e: MotionEvent): Boolean {
+        val limit = PALM_DP * density
+        return (0 until e.pointerCount).any { e.getTouchMajor(it) > limit }
+    }
 
     /**
      * 只有画笔通道没有消费的触摸才会到这里：防误触模式或文石设备上的手指、
@@ -445,6 +475,16 @@ class InkCanvasView @JvmOverloads constructor(
         val tool = event.getToolType(0)
         val isStylus = tool == MotionEvent.TOOL_TYPE_STYLUS || tool == MotionEvent.TOOL_TYPE_ERASER
         if (isStylus && selection.isEmpty) return false
+        if (!isStylus && !selection.isEmpty && event.actionMasked == MotionEvent.ACTION_DOWN &&
+            (isPalm(event) || penRecentlyActive())
+        ) {
+            // 书写时搭在屏幕上的手掌不能把选区取消掉
+            rejected = true
+        }
+        if (!isStylus && rejected && mode == Mode.NONE) {
+            if (event.actionMasked == MotionEvent.ACTION_UP || event.actionMasked == MotionEvent.ACTION_CANCEL) rejected = false
+            return true
+        }
         if (!selection.isEmpty && event.pointerCount == 1 &&
             (mode == Mode.NONE || mode == Mode.SEL_MOVE || mode == Mode.SEL_SCALE || mode == Mode.SEL_ROTATE)
         ) {
@@ -455,7 +495,18 @@ class InkCanvasView @JvmOverloads constructor(
 
     /** 手指手势。也供画笔通道在检测到多指时转交（可以从 POINTER_DOWN 中途开始）。 */
     fun handleGesture(e: MotionEvent): Boolean {
-        when (e.actionMasked) {
+        val action = e.actionMasked
+        if (action == MotionEvent.ACTION_DOWN) rejected = false
+        // 手掌，或者笔正在/刚刚书写：整次触摸作废，不平移、不缩放、不翻页、不触发多指撤销
+        if (!rejected && (isPalm(e) || penRecentlyActive())) rejectGesture()
+        if (rejected) {
+            if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
+                rejected = false
+                mode = Mode.NONE
+            }
+            return true
+        }
+        when (action) {
             MotionEvent.ACTION_DOWN -> startGesture(e)
             MotionEvent.ACTION_POINTER_DOWN -> {
                 if (mode == Mode.NONE || mode.isSelection()) startGesture(e)
@@ -478,7 +529,8 @@ class InkCanvasView @JvmOverloads constructor(
                 val x = e.getX(0); val y = e.getY(0)
                 travel += abs(x - lastX) + abs(y - lastY)
                 when (mode) {
-                    Mode.PAN -> if (e.pointerCount == 1) {
+                    Mode.PAN -> if (e.pointerCount == 1 && (panStarted || hypot(x - downX, y - downY) > touchSlop)) {
+                        panStarted = true
                         val vp = viewport
                         val next = when {
                             vp.isZoomed -> vp.panBy(x - lastX, y - lastY)
@@ -533,6 +585,7 @@ class InkCanvasView @JvmOverloads constructor(
         downX = e.getX(0); downY = e.getY(0)
         lastX = downX; lastY = downY
         travel = 0f
+        panStarted = false
         maxPointers = e.pointerCount
         val r = ruler
         mode = if (r != null && r.contains(viewport.toPageX(downX), viewport.toPageY(downY))) Mode.RULER else Mode.PAN
@@ -562,6 +615,13 @@ class InkCanvasView @JvmOverloads constructor(
         }
         if (mode == Mode.RULER || mode == Mode.RULER_ROTATE) ruler?.let { listener?.onRulerMoved(it) }
         endViewportGesture()
+    }
+
+    /** 放弃当前手势：视口停在当前位置，按新比例重新渲染一次。 */
+    private fun rejectGesture() {
+        rejected = true
+        endViewportGesture()
+        mode = Mode.NONE
     }
 
     private fun endViewportGesture() {
@@ -662,6 +722,10 @@ class InkCanvasView @JvmOverloads constructor(
 
     companion object {
         private const val SWIPE_MIN_DP = 80f
+        /** 接触长轴超过这个尺寸（dp）视为手掌。 */
+        private const val PALM_DP = 28f
+        /** 笔抬起后这么久之内的手指触摸视为手掌误触。 */
+        private const val PALM_WINDOW_MS = 600L
         private const val TAP_MS = 300L
         private const val DOUBLE_TAP_MS = 350L
         private const val MULTI_TAP_MS = 350L
