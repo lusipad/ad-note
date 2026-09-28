@@ -37,6 +37,7 @@ import com.adnote.ink.ScratchOut
 import com.adnote.ink.Selection
 import com.adnote.ink.SelectionOps
 import com.adnote.ink.ShapeRecognizer
+import com.adnote.ink.StrokeGeometry
 import com.adnote.ink.TextLayout
 import com.adnote.model.EraserMode
 import com.adnote.model.EraserSizes
@@ -135,15 +136,21 @@ class EditorActivity : AppCompatActivity() {
     private val handler = Handler(Looper.getMainLooper())
     private val saveRunnable = Runnable { saveNow() }
 
-    private lateinit var recorder: AudioRecorder
     private val player = AudioPlayer()
-    private var recordingPath: String? = null
     private val recordTicker = object : Runnable {
         override fun run() {
-            if (!recorder.isRecording) return
-            tvRecordingTime.text = "● 录音中 ${formatDuration(recorder.elapsedMs)}"
+            val active = RecordingSession.active ?: return
+            val other = if (active.noteId != note.id) "（「${active.noteTitle}」）" else ""
+            tvRecordingTime.text = "● 录音中$other ${formatDuration(RecordingSession.elapsedMs)}"
             handler.postDelayed(this, 1000)
         }
+    }
+
+    /** 录音结束且属于这篇笔记时，记进内存里的笔记（否则之后保存会把它覆盖掉）。 */
+    private val recordingListener: (Recording) -> Unit = { rec ->
+        note = note.copy(recordings = note.recordings + rec, updatedAt = System.currentTimeMillis())
+        saveNow()
+        updateRecordingBar()
     }
 
     /** 选择自定义背景后是否应用到全部页面。 */
@@ -175,7 +182,7 @@ class EditorActivity : AppCompatActivity() {
         // （上次停在橡皮、套索或文字时，进来直接写字会没反应）
         tools = app.toolState.copy(tool = Tool.PEN)
         assets = BitmapAssets(repo.getNoteDir(note.id))
-        recorder = AudioRecorder(this)
+        RecordingSession.addListener(note.id, recordingListener)
 
         if (note.isPdf) {
             val pdfFile = repo.getPdfFile(note)
@@ -683,19 +690,27 @@ class EditorActivity : AppCompatActivity() {
         val layer = activeLayer()
         val editable = p.strokes.filter { it.layer == layer }
         val radius = tools.eraserRadius
-        val next = when (tools.eraserMode) {
+        val next: List<Stroke>
+        val changed: List<Stroke>
+        when (tools.eraserMode) {
             EraserMode.PARTIAL -> {
                 val erased = Eraser.erasePartial(editable, path, radius)
                 if (erased === editable) return
-                p.strokes.filter { it.layer != layer } + erased
+                next = p.strokes.filter { it.layer != layer } + erased
+                // 被擦到的原笔画（整条删掉或拆成几段），擦除后的内容都在它们的范围内
+                val kept = java.util.Collections.newSetFromMap(java.util.IdentityHashMap<Stroke, Boolean>())
+                kept.addAll(erased)
+                changed = editable.filter { it !in kept }
             }
             EraserMode.STROKE -> {
                 val hit = Eraser.hitStrokes(editable, path, radius)
                 if (hit.isEmpty()) return
-                p.strokes.filterNot { it.id in hit }
+                next = p.strokes.filterNot { it.id in hit }
+                changed = editable.filter { it.id in hit }
             }
         }
-        inkCanvas.updatePage(p.copy(strokes = next))
+        // 只重画变化的那一块，笔迹多的页面实时擦除也跟得上
+        inkCanvas.updatePage(p.copy(strokes = next), dirty = StrokeGeometry.bounds(changed))
     }
 
     /** 实时擦除：只处理新增的轨迹段，同时显示橡皮光标。 */
@@ -1216,7 +1231,7 @@ class EditorActivity : AppCompatActivity() {
     // region 录音
 
     private fun toggleRecording() {
-        if (recorder.isRecording) {
+        if (RecordingSession.active != null) {
             stopRecording()
             return
         }
@@ -1228,39 +1243,34 @@ class EditorActivity : AppCompatActivity() {
     }
 
     private fun startRecording() {
-        val path = repo.newAssetPath("audio", "m4a")
         try {
-            recorder.start(repo.assetFile(note.id, path))
+            RecordingSession.start(this, note.id, note.title, note.pages.getOrNull(currentPageIndex)?.id)
         } catch (e: Exception) {
             toast("无法开始录音：${e.message}")
             return
         }
-        recordingPath = path
-        layoutRecordingBar.visibility = View.VISIBLE
-        btnRecord.setBackgroundResource(R.drawable.bg_tool_selected)
-        handler.post(recordTicker)
-        updateExcludeRects()
+        toast("开始录音，熄屏或切到别的应用也会继续，可在通知栏停止")
+        updateRecordingBar()
     }
 
     private fun stopRecording() {
-        if (!recorder.isRecording) return
-        val duration = recorder.stop()
-        handler.removeCallbacks(recordTicker)
-        layoutRecordingBar.visibility = View.GONE
-        btnRecord.setBackgroundResource(R.drawable.bg_button_secondary)
-        updateExcludeRects()
-        val path = recordingPath ?: return
-        recordingPath = null
-        if (duration < 800) {
-            repo.assetFile(note.id, path).delete()
-            toast("录音太短，已丢弃")
-            return
+        val (active, rec) = RecordingSession.stop(this) ?: return
+        updateRecordingBar()
+        when {
+            rec == null -> toast("录音太短，已丢弃")
+            active.noteId == note.id -> toast("已保存录音 ${formatDuration(rec.durationMs)}，在「更多 → 录音」里回放")
+            else -> toast("录音已保存到「${active.noteTitle}」")
         }
-        val rec = Recording(path = path, createdAt = System.currentTimeMillis(), durationMs = duration,
-            pageId = note.pages.getOrNull(currentPageIndex)?.id)
-        note = note.copy(recordings = note.recordings + rec, updatedAt = System.currentTimeMillis())
-        saveNow()
-        toast("已保存录音 ${formatDuration(duration)}，在「更多 → 录音」里回放")
+    }
+
+    /** 录音条跟随进程里的录音状态（可能是在别的笔记里开始的，或已从通知栏停止）。 */
+    private fun updateRecordingBar() {
+        val recording = RecordingSession.active != null
+        handler.removeCallbacks(recordTicker)
+        layoutRecordingBar.visibility = if (recording) View.VISIBLE else View.GONE
+        btnRecord.setBackgroundResource(if (recording) R.drawable.bg_tool_selected else R.drawable.bg_button_secondary)
+        if (recording) handler.post(recordTicker)
+        updateExcludeRects()
     }
 
     private fun showRecordingsDialog() {
@@ -2067,6 +2077,7 @@ class EditorActivity : AppCompatActivity() {
         super.onResume()
         resumed = true
         refreshPenEnabled()
+        if (::note.isInitialized) updateRecordingBar()
     }
 
     override fun onPause() {
@@ -2074,7 +2085,8 @@ class EditorActivity : AppCompatActivity() {
         resumed = false
         refreshPenEnabled()
         if (::note.isInitialized) {
-            stopRecording()
+            // 录音不停：熄屏、切到别的应用都继续录，由前台服务保活
+            handler.removeCallbacks(recordTicker)
             player.stop()
             syncCurrentPageFromCanvas()
             saveNow()
@@ -2088,6 +2100,7 @@ class EditorActivity : AppCompatActivity() {
     override fun onDestroy() {
         super.onDestroy()
         handler.removeCallbacksAndMessages(null)
+        RecordingSession.removeListener(recordingListener)
         penInput?.detach()
         penInput = null
         pdfRenderer?.close()
@@ -2118,10 +2131,10 @@ class EditorActivity : AppCompatActivity() {
         private const val MENU_EXTEND = 14
 
         fun start(context: Context, noteId: String) {
-            val intent = Intent(context, EditorActivity::class.java).apply {
-                putExtra(EXTRA_NOTE_ID, noteId)
-            }
-            context.startActivity(intent)
+            context.startActivity(intent(context, noteId))
         }
+
+        fun intent(context: Context, noteId: String): Intent =
+            Intent(context, EditorActivity::class.java).apply { putExtra(EXTRA_NOTE_ID, noteId) }
     }
 }

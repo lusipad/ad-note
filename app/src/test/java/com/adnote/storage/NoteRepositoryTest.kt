@@ -173,4 +173,20 @@ class NoteRepositoryTrashTest {
         assertEquals(listOf("dev"), NoteRepository.tagsOf(all))
         assertTrue("生活" in NoteRepository.foldersOf(all))
     }
+
+    @Test
+    fun staleEditorCopyDoesNotRollBackSyncState() {
+        val repo = NoteRepository(tmp.root)
+        val opened = repo.create("笔记", "x", 10, 10)
+        // 编辑器打开期间同步完成
+        repo.save(opened.copy(sync = SyncState(lastSyncedAt = 500L, remoteMdPath = "x/笔记.md")))
+        // 编辑器拿着旧的同步状态保存新内容
+        repo.saveAsync(opened.copy(title = "改过", updatedAt = 900L))
+        repo.flush()
+        val n = NoteRepository(tmp.root).load(opened.id)!!
+        assertEquals("改过", n.title)
+        assertEquals(500L, n.sync.lastSyncedAt)
+        assertEquals("x/笔记.md", n.sync.remoteMdPath)
+        assertTrue(n.isDirty)
+    }
 }

@@ -39,6 +39,18 @@ class NoteRepository(private val root: File) {
     private val writer = Executors.newSingleThreadExecutor { r -> Thread(r, "note-writer").apply { isDaemon = true } }
     private val pending = ConcurrentHashMap<String, Note>()
 
+    /**
+     * 本进程里写过的最新同步状态。编辑器打开笔记后内存里拿的是旧的同步状态，
+     * 同步在这期间完成的话，编辑器下次保存会把它改回去（导致重复上传、远端标签被当成外部修改）。
+     * 保存时同步状态只进不退。
+     */
+    private val syncStates = ConcurrentHashMap<String, com.adnote.model.SyncState>()
+
+    private fun withLatestSync(note: Note): Note {
+        val known = syncStates[note.id] ?: return note
+        return if (known.lastSyncedAt > note.sync.lastSyncedAt) note.copy(sync = known) else note
+    }
+
     fun list(): List<Note> =
         notesDir.listFiles().orEmpty()
             .mapNotNull { dir -> load(dir.name) }
@@ -60,14 +72,16 @@ class NoteRepository(private val root: File) {
     /** 立即写入磁盘（在调用线程上）。 */
     fun save(note: Note) {
         synchronized(writeLock) {
-            val dir = File(notesDir, note.id).apply { mkdirs() }
-            atomicWrite(File(dir, "note.json"), NoteJson.encodeToString(Note.serializer(), note))
+            val n = withLatestSync(note)
+            val dir = File(notesDir, n.id).apply { mkdirs() }
+            atomicWrite(File(dir, "note.json"), NoteJson.encodeToString(Note.serializer(), n))
+            syncStates[n.id] = n.sync
         }
     }
 
     /** 在后台保存。同一笔记排队中的多次保存只写最后一次。 */
     fun saveAsync(note: Note) {
-        if (pending.put(note.id, note) == null) writer.execute { writePending(note.id) }
+        if (pending.put(note.id, withLatestSync(note)) == null) writer.execute { writePending(note.id) }
     }
 
     private fun writePending(id: String) {
@@ -167,6 +181,7 @@ class NoteRepository(private val root: File) {
         // 还在排队的保存不能在删除后把笔记重新写回来
         flush()
         pending.remove(note.id)
+        syncStates.remove(note.id)
         if (note.sync.lastSyncedAt > 0) {
             val t = Tombstone(note.id, note.sync.remoteMdPath, remoteInkDir)
             atomicWrite(File(tombDir, "${note.id}.json"), NoteJson.encodeToString(Tombstone.serializer(), t))
@@ -181,6 +196,7 @@ class NoteRepository(private val root: File) {
     fun moveToTrash(note: Note, remoteInkDir: String?, now: Long = System.currentTimeMillis()) {
         flush()
         pending.remove(note.id)
+        syncStates.remove(note.id)
         if (note.sync.lastSyncedAt > 0) {
             val t = Tombstone(note.id, note.sync.remoteMdPath, remoteInkDir)
             atomicWrite(File(tombDir, "${note.id}.json"), NoteJson.encodeToString(Tombstone.serializer(), t))
@@ -217,6 +233,8 @@ class NoteRepository(private val root: File) {
         }
         clearTombstone(id)
         val note = load(id) ?: return null
+        // 恢复后要整篇重新上传：同步状态清零，不能被之前记下的状态顶回去
+        syncStates.remove(id)
         val restored = note.copy(updatedAt = now, sync = com.adnote.model.SyncState())
         save(restored)
         return restored

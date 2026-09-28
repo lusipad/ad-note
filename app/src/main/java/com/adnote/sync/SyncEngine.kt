@@ -168,7 +168,9 @@ class SyncEngine(
             if (latest.updatedAt == uploaded.updatedAt) return merged.copy(sync = state)
             // 远端改过的标签只在本地这段时间没动标签时采用
             val tags = if (latest.tags == uploaded.tags) merged.tags else latest.tags
-            return latest.copy(tags = tags, sync = state.copy(lastSyncedAt = uploaded.updatedAt))
+            // 同步时间取两者较大值：保存时同步状态只进不退（见 NoteRepository），但仍早于这次修改，保持待同步
+            val syncedAt = maxOf(uploaded.updatedAt, uploaded.sync.lastSyncedAt)
+            return latest.copy(tags = tags, sync = state.copy(lastSyncedAt = syncedAt))
         }
     }
 }
