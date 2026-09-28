@@ -31,6 +31,8 @@ class SettingsActivity : AppCompatActivity() {
     private lateinit var tvPenStatus: TextView
     private lateinit var cbStylusOnly: CheckBox
     private lateinit var cbPreferOnyx: CheckBox
+    private lateinit var cbVolumeKeyPaging: CheckBox
+    private lateinit var cbFingerSwipePaging: CheckBox
     private lateinit var btnFullRefreshTest: Button
     private lateinit var tvModelStatus: TextView
     private lateinit var btnDownloadModel: Button
@@ -57,6 +59,8 @@ class SettingsActivity : AppCompatActivity() {
         tvPenStatus = findViewById(R.id.tvPenStatus)
         cbStylusOnly = findViewById(R.id.cbStylusOnly)
         cbPreferOnyx = findViewById(R.id.cbPreferOnyx)
+        cbVolumeKeyPaging = findViewById(R.id.cbVolumeKeyPaging)
+        cbFingerSwipePaging = findViewById(R.id.cbFingerSwipePaging)
         btnFullRefreshTest = findViewById(R.id.btnFullRefreshTest)
         tvModelStatus = findViewById(R.id.tvModelStatus)
         btnDownloadModel = findViewById(R.id.btnDownloadModel)
@@ -72,6 +76,8 @@ class SettingsActivity : AppCompatActivity() {
 
         cbStylusOnly.isChecked = app.stylusOnly
         cbPreferOnyx.isChecked = app.preferOnyx
+        cbVolumeKeyPaging.isChecked = app.volumeKeyPaging
+        cbFingerSwipePaging.isChecked = app.fingerSwipePaging
     }
 
     private fun getSettingsFromInput(): SyncSettings {
@@ -90,6 +96,14 @@ class SettingsActivity : AppCompatActivity() {
         cbStylusOnly.setOnCheckedChangeListener { _, isChecked ->
             AdNoteApp.instance.setStylusOnly(isChecked)
             updatePenStatus()
+        }
+
+        cbVolumeKeyPaging.setOnCheckedChangeListener { _, isChecked ->
+            AdNoteApp.instance.setVolumeKeyPaging(isChecked)
+        }
+
+        cbFingerSwipePaging.setOnCheckedChangeListener { _, isChecked ->
+            AdNoteApp.instance.setFingerSwipePaging(isChecked)
         }
 
         cbPreferOnyx.setOnCheckedChangeListener { _, isChecked ->

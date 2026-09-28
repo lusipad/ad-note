@@ -16,6 +16,8 @@ data class Stroke(
     val width: Float = 3f,
     /** 笔迹颜色 Hex，默认墨黑 #000000。 */
     val color: String = "#000000",
+    /** 笔型（钢笔、铅笔、荧光笔等）。 */
+    val pen: PenType = PenType.FOUNTAIN,
 )
 
 @Serializable
@@ -38,6 +40,8 @@ data class SyncState(
     val remoteMdPath: String? = null,
     /** 上次同步后远端 md 的 ETag，用于判断是否在别处被修改过。 */
     val remoteMdEtag: String? = null,
+    /** 上次同步上传的页面 SVG 数量，删页后用于清理远端多余的 page-NNN.svg。 */
+    val remotePageCount: Int = 0,
 )
 
 @Serializable

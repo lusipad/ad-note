@@ -128,6 +128,10 @@ class SyncEngine(
             val fileName = MarkdownComposer.pageFileName(index)
             webDavClient.put("$targetInkDir/$fileName", svg, "image/svg+xml; charset=utf-8")
         }
+        // 本地删过页：清理远端多出来的 page-NNN.svg
+        for (index in noteWithTags.pages.size until originalNote.sync.remotePageCount) {
+            webDavClient.delete("$targetInkDir/${MarkdownComposer.pageFileName(index)}")
+        }
 
         // 5. 上传原始 ink.json（供灾备恢复）
         val inkJson = NoteJson.encodeToString(Note.serializer(), noteWithTags)
@@ -139,6 +143,7 @@ class SyncEngine(
                 lastSyncedAt = System.currentTimeMillis(),
                 remoteMdPath = targetMdPath,
                 remoteMdEtag = putMdResp.etag ?: existingResp?.etag,
+                remotePageCount = noteWithTags.pages.size,
             ),
         )
         repository.save(updatedNote)

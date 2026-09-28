@@ -1,21 +1,57 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:background="@color/bg_surface">
+<LinearLayout
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:orientation="vertical"
-    android:padding="20dp"
-    android:background="@color/bg_surface">
+    android:padding="20dp">
+
+    <!-- 笔迹实时预览 -->
+    <com.adnote.ui.StrokePreviewView
+        android:id="@+id/strokePreview"
+        android:layout_width="match_parent"
+        android:layout_height="72dp"
+        android:background="@drawable/bg_page_thumb"
+        android:layout_marginBottom="16dp" />
 
     <TextView
+        android:id="@+id/tvPenTypeLabel"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="笔迹墨水颜色"
+        android:text="笔型"
         android:textSize="12sp"
         android:textStyle="bold"
         android:textColor="@color/text_secondary"
         android:layout_marginBottom="8dp" />
 
     <HorizontalScrollView
+        android:id="@+id/scrollPenTypeChips"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:scrollbars="none"
+        android:layout_marginBottom="16dp">
+        <LinearLayout
+            android:id="@+id/layoutPenTypeChips"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal" />
+    </HorizontalScrollView>
+
+    <TextView
+        android:id="@+id/tvPenColorLabel"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="墨水颜色"
+        android:textSize="12sp"
+        android:textStyle="bold"
+        android:textColor="@color/text_secondary"
+        android:layout_marginBottom="8dp" />
+
+    <HorizontalScrollView
+        android:id="@+id/scrollPenColorChips"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:scrollbars="none"
@@ -27,13 +63,34 @@
             android:orientation="horizontal" />
     </HorizontalScrollView>
 
-    <TextView
-        android:layout_width="wrap_content"
+    <LinearLayout
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="笔尖粗细（支持电磁笔压感曲线）"
-        android:textSize="12sp"
-        android:textStyle="bold"
-        android:textColor="@color/text_secondary"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:layout_marginBottom="4dp">
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="笔尖粗细（随压感变化）"
+            android:textSize="12sp"
+            android:textStyle="bold"
+            android:textColor="@color/text_secondary" />
+
+        <TextView
+            android:id="@+id/tvPenWidthValue"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:textSize="12sp"
+            android:textColor="@color/text_primary" />
+    </LinearLayout>
+
+    <SeekBar
+        android:id="@+id/seekPenWidth"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
         android:layout_marginBottom="8dp" />
 
     <HorizontalScrollView
@@ -47,3 +104,4 @@
             android:orientation="horizontal" />
     </HorizontalScrollView>
 </LinearLayout>
+</ScrollView>

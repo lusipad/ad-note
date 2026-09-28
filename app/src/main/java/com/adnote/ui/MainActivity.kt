@@ -219,116 +219,14 @@ class MainActivity : AppCompatActivity() {
         etFolder.setText(selectedFolder ?: Note.DEFAULT_FOLDER)
         selectedTag?.let { etTags.setText(it) }
 
-        var selectedTemplate = PageTemplate.RULED
-        var selectedColorHex = PaperPresets.WHITE.hex
-        val categories = listOf("全部", "常规", "横线", "方格", "点阵", "练字", "专业")
-        var selectedCategory = selectedTemplate.category.let { cat -> if (categories.contains(cat)) cat else "全部" }
-
-        fun refreshTemplateChips() {
-            layoutTemplateChips.removeAllViews()
-            val filtered = if (selectedCategory == "全部") {
-                PageTemplate.entries
-            } else {
-                PageTemplate.entries.filter { it.category == selectedCategory }
-            }
-            filtered.forEach { template ->
-                val isSelected = template == selectedTemplate
-                val btn = Button(this).apply {
-                    text = template.displayName
-                    textSize = 12f
-                    stateListAnimator = null
-                    val lp = LinearLayout.LayoutParams(
-                        LinearLayout.LayoutParams.WRAP_CONTENT,
-                        (32 * resources.displayMetrics.density).toInt()
-                    ).apply {
-                        marginEnd = (8 * resources.displayMetrics.density).toInt()
-                    }
-                    layoutParams = lp
-                    setPadding((12 * resources.displayMetrics.density).toInt(), 0, (12 * resources.displayMetrics.density).toInt(), 0)
-                    if (isSelected) {
-                        setBackgroundResource(R.drawable.bg_chip_selected)
-                        setTextColor(getColor(R.color.white))
-                    } else {
-                        setBackgroundResource(R.drawable.bg_chip_unselected)
-                        setTextColor(getColor(R.color.text_primary))
-                    }
-                    setOnClickListener {
-                        selectedTemplate = template
-                        refreshTemplateChips()
-                    }
-                }
-                layoutTemplateChips.addView(btn)
-            }
-        }
-
-        fun refreshCategoryChips() {
-            layoutTemplateCategoryChips.removeAllViews()
-            categories.forEach { cat ->
-                val isSelected = cat == selectedCategory
-                val btn = Button(this).apply {
-                    text = cat
-                    textSize = 12f
-                    stateListAnimator = null
-                    val lp = LinearLayout.LayoutParams(
-                        LinearLayout.LayoutParams.WRAP_CONTENT,
-                        (32 * resources.displayMetrics.density).toInt()
-                    ).apply {
-                        marginEnd = (8 * resources.displayMetrics.density).toInt()
-                    }
-                    layoutParams = lp
-                    setPadding((12 * resources.displayMetrics.density).toInt(), 0, (12 * resources.displayMetrics.density).toInt(), 0)
-                    if (isSelected) {
-                        setBackgroundResource(R.drawable.bg_chip_selected)
-                        setTextColor(getColor(R.color.white))
-                    } else {
-                        setBackgroundResource(R.drawable.bg_chip_unselected)
-                        setTextColor(getColor(R.color.text_primary))
-                    }
-                    setOnClickListener {
-                        selectedCategory = cat
-                        refreshCategoryChips()
-                        refreshTemplateChips()
-                    }
-                }
-                layoutTemplateCategoryChips.addView(btn)
-            }
-        }
-
-        fun refreshColorChips() {
-            layoutColorChips.removeAllViews()
-            PaperPresets.ALL.forEach { tone ->
-                val isSelected = tone.hex.equals(selectedColorHex, ignoreCase = true)
-                val btn = Button(this).apply {
-                    text = tone.displayName
-                    textSize = 12f
-                    stateListAnimator = null
-                    val lp = LinearLayout.LayoutParams(
-                        LinearLayout.LayoutParams.WRAP_CONTENT,
-                        (32 * resources.displayMetrics.density).toInt()
-                    ).apply {
-                        marginEnd = (8 * resources.displayMetrics.density).toInt()
-                    }
-                    layoutParams = lp
-                    setPadding((12 * resources.displayMetrics.density).toInt(), 0, (12 * resources.displayMetrics.density).toInt(), 0)
-                    if (isSelected) {
-                        setBackgroundResource(R.drawable.bg_chip_selected)
-                        setTextColor(getColor(R.color.white))
-                    } else {
-                        setBackgroundResource(R.drawable.bg_chip_unselected)
-                        setTextColor(getColor(R.color.text_primary))
-                    }
-                    setOnClickListener {
-                        selectedColorHex = tone.hex
-                        refreshColorChips()
-                    }
-                }
-                layoutColorChips.addView(btn)
-            }
-        }
-
-        refreshCategoryChips()
-        refreshTemplateChips()
-        refreshColorChips()
+        val picker = TemplatePicker(
+            context = this,
+            categoryContainer = layoutTemplateCategoryChips,
+            templateContainer = layoutTemplateChips,
+            colorContainer = layoutColorChips,
+            initialTemplate = PageTemplate.RULED,
+            initialColor = PaperPresets.WHITE.hex,
+        )
 
         AlertDialog.Builder(this)
             .setTitle(R.string.new_note_dialog_title)
@@ -345,8 +243,8 @@ class MainActivity : AppCompatActivity() {
                     folder = folder,
                     pageWidth = 1404,
                     pageHeight = 1872,
-                    template = selectedTemplate,
-                    backgroundColor = selectedColorHex
+                    template = picker.selectedTemplate,
+                    backgroundColor = picker.selectedColor
                 ).copy(tags = tags)
                 AdNoteApp.instance.repository.save(created)
 

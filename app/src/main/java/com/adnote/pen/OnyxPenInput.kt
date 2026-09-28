@@ -7,6 +7,7 @@ import android.os.Looper
 import android.util.Log
 import android.view.View
 import com.adnote.model.InkPoint
+import com.adnote.model.PenType
 import com.onyx.android.sdk.data.note.TouchPoint
 import com.onyx.android.sdk.pen.RawInputCallback
 import com.onyx.android.sdk.pen.TouchHelper
@@ -121,6 +122,31 @@ class OnyxPenInput : PenInput {
         runCatching {
             touchHelper?.setStrokeColor(color)
         }
+    }
+
+    override fun setPenStyle(pen: PenType) {
+        val helper = touchHelper ?: return
+        // 不同版本 SDK 提供的笔锋常量不完全相同，用反射按名称查找，找不到就退回铅笔笔锋
+        val names = when (pen) {
+            PenType.FOUNTAIN -> listOf("STROKE_STYLE_FOUNTAIN")
+            PenType.BRUSH -> listOf("STROKE_STYLE_NEO_BRUSH", "STROKE_STYLE_BRUSH", "STROKE_STYLE_FOUNTAIN")
+            PenType.MARKER, PenType.HIGHLIGHTER -> listOf("STROKE_STYLE_MARKER")
+            PenType.PENCIL -> listOf("STROKE_STYLE_CHARCOAL", "STROKE_STYLE_PENCIL")
+            PenType.BALLPOINT -> listOf("STROKE_STYLE_PENCIL")
+        }
+        val style = names.firstNotNullOfOrNull { name ->
+            runCatching { TouchHelper::class.java.getField(name).getInt(null) }.getOrNull()
+        } ?: TouchHelper.STROKE_STYLE_PENCIL
+        runCatching { helper.setStrokeStyle(style) }
+    }
+
+    override fun setRenderEnabled(enabled: Boolean) {
+        val helper = touchHelper ?: return
+        // setRawDrawingRenderEnabled 仅在较新的 SDK 中存在
+        runCatching {
+            helper.javaClass.getMethod("setRawDrawingRenderEnabled", Boolean::class.javaPrimitiveType)
+                .invoke(helper, enabled)
+        }.onFailure { Log.w("OnyxPenInput", "当前 SDK 不支持关闭直绘渲染: ${it.message}") }
     }
 
     override fun detach() {

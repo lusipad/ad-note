@@ -240,6 +240,24 @@
                 android:text="优先使用文石硬件直绘低延迟通道"
                 android:textSize="13sp"
                 android:textColor="@color/text_primary"
+                android:layout_marginBottom="6dp" />
+
+            <CheckBox
+                android:id="@+id/cbVolumeKeyPaging"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="音量键 / 翻页键翻页"
+                android:textSize="13sp"
+                android:textColor="@color/text_primary"
+                android:layout_marginBottom="6dp" />
+
+            <CheckBox
+                android:id="@+id/cbFingerSwipePaging"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="手指左右滑动翻页（手指不书写时生效）"
+                android:textSize="13sp"
+                android:textColor="@color/text_primary"
                 android:layout_marginBottom="12dp" />
 
             <Button

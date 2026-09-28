@@ -89,4 +89,47 @@ class SvgExporterTest {
         val musicSvg = SvgExporter.export(musicPage)
         assertTrue(musicSvg.contains("""<g id="template_music""""))
     }
+
+    @Test
+    fun testExportHighlighterAndPencil() {
+        val page = Page(
+            width = 800,
+            height = 1200,
+            strokes = listOf(
+                Stroke(
+                    id = "hl",
+                    points = listOf(InkPoint(10f, 10f), InkPoint(200f, 10f)),
+                    width = 18f,
+                    color = "#FACC15",
+                    pen = com.adnote.model.PenType.HIGHLIGHTER
+                ),
+                Stroke(
+                    id = "pencil",
+                    points = listOf(InkPoint(10f, 50f), InkPoint(200f, 60f)),
+                    width = 3f,
+                    pen = com.adnote.model.PenType.PENCIL
+                )
+            )
+        )
+        val svg = SvgExporter.export(page)
+        // 荧光笔：描边折线 + 半透明
+        assertTrue(svg.contains("""<path fill="none" stroke="#facc15" stroke-width="18.0" stroke-linecap="round" stroke-linejoin="round" opacity="0.35" d="M10.0 10.0 L200.0 10.0"/>"""))
+        // 铅笔：填充轮廓 + 半透明
+        assertTrue(svg.contains("""<path fill="#000000" opacity="0.72" d="M"""))
+    }
+
+    @Test
+    fun testExportNewTemplates() {
+        for (t in listOf(
+            com.adnote.model.PageTemplate.TODO,
+            com.adnote.model.PageTemplate.ENGINEERING,
+            com.adnote.model.PageTemplate.ISOMETRIC,
+            com.adnote.model.PageTemplate.MANUSCRIPT
+        )) {
+            val svg = SvgExporter.export(Page(width = 1404, height = 1872, template = t))
+            assertTrue(svg.contains("""<g id="template_${t.name.lowercase()}""""))
+        }
+        val blank = SvgExporter.export(Page(width = 1404, height = 1872))
+        assertTrue(!blank.contains("<g id=\"template_"))
+    }
 }
