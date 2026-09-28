@@ -135,4 +135,42 @@ class NoteRepositoryTrashTest {
         org.junit.Assert.assertTrue(copied.startsWith("images/"))
         org.junit.Assert.assertArrayEquals(byteArrayOf(1, 2, 3), repo.readAsset(b.id, copied))
     }
+
+    @Test
+    fun asyncSaveIsVisibleImmediatelyAndReachesDisk() {
+        val repo = NoteRepository(tmp.root)
+        val note = repo.create("原标题", "x", 10, 10)
+        repeat(20) { i -> repo.saveAsync(note.copy(title = "标题 $i", updatedAt = i.toLong())) }
+        // 还没写完也能读到最新版本（重新打开编辑器不会读到旧内容）
+        assertEquals("标题 19", repo.load(note.id)?.title)
+        assertEquals("标题 19", repo.list().single().title)
+        repo.flush()
+        // 换一个仓库实例直接读磁盘：最后一次保存已落盘
+        assertEquals("标题 19", NoteRepository(tmp.root).load(note.id)?.title)
+    }
+
+    @Test
+    fun pendingSaveDoesNotResurrectTrashedNote() {
+        val repo = NoteRepository(tmp.root)
+        val note = repo.create("要删除", "x", 10, 10)
+        repo.saveAsync(note.copy(title = "改过"))
+        repo.moveToTrash(note, null)
+        repo.flush()
+        assertNull(repo.load(note.id))
+        assertTrue(repo.list().isEmpty())
+        assertEquals("改过", repo.listTrash().single().note.title)
+    }
+
+    @Test
+    fun filterHelpersWorkOnLoadedList() {
+        val repo = NoteRepository(tmp.root)
+        val a = repo.create("Kotlin 协程", "工作/项目", 10, 10).copy(tags = listOf("dev"))
+        repo.save(a)
+        repo.create("购物清单", "生活", 10, 10)
+        val all = repo.list()
+        assertEquals(listOf(a.id), NoteRepository.filter(all, "协程").map { it.id })
+        assertEquals(listOf(a.id), NoteRepository.filter(all, "", folder = "工作").map { it.id })
+        assertEquals(listOf("dev"), NoteRepository.tagsOf(all))
+        assertTrue("生活" in NoteRepository.foldersOf(all))
+    }
 }

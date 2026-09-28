@@ -147,15 +147,28 @@ class SyncEngine(
         webDavClient.put("$targetInkDir/ink.json", inkJson, "application/json; charset=utf-8")
 
         // 6. 更新本地同步状态
-        val updatedNote = noteWithTags.copy(
-            sync = SyncState(
-                lastSyncedAt = System.currentTimeMillis(),
-                remoteMdPath = targetMdPath,
-                remoteMdEtag = putMdResp.etag ?: existingResp?.etag,
-                remotePageCount = noteWithTags.pages.size,
-                uploadedRecordings = uploaded.filter { id -> noteWithTags.recordings.any { it.id == id } },
-            ),
+        val syncState = SyncState(
+            lastSyncedAt = System.currentTimeMillis(),
+            remoteMdPath = targetMdPath,
+            remoteMdEtag = putMdResp.etag ?: existingResp?.etag,
+            remotePageCount = noteWithTags.pages.size,
+            uploadedRecordings = uploaded.filter { id -> noteWithTags.recordings.any { it.id == id } },
         )
-        repository.save(updatedNote)
+        repository.save(withSyncState(repository.load(originalNote.id) ?: return, originalNote, noteWithTags, syncState))
+    }
+
+    companion object {
+        /**
+         * 把同步结果写回笔记。上传要花一段时间，期间笔记可能在编辑器里又改过：
+         * 不能用上传时的旧快照覆盖（会丢掉新写的笔迹），而是以磁盘上的最新版本为准，只更新同步状态；
+         * 改过的笔记同步时间记为上传的那个版本，保持「待同步」，下次再传。
+         * 调用方在笔记已被删除（[latest] 为空）时直接跳过，不能把它写回来。
+         */
+        fun withSyncState(latest: Note, uploaded: Note, merged: Note, state: SyncState): Note {
+            if (latest.updatedAt == uploaded.updatedAt) return merged.copy(sync = state)
+            // 远端改过的标签只在本地这段时间没动标签时采用
+            val tags = if (latest.tags == uploaded.tags) merged.tags else latest.tags
+            return latest.copy(tags = tags, sync = state.copy(lastSyncedAt = uploaded.updatedAt))
+        }
     }
 }

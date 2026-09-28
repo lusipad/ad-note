@@ -127,6 +127,7 @@ class EditorActivity : AppCompatActivity() {
     private var lastPenRegion: Pair<Rect, List<Rect>>? = null
 
     private var resumed = false
+    private var windowFocused = false
 
     /** 当前打开的对话框/弹出菜单层数（可能嵌套，如页面概览里再弹菜单）。 */
     private var overlayDepth = 0
@@ -1911,7 +1912,18 @@ class EditorActivity : AppCompatActivity() {
     // region 画笔通道开关、保存、识别
 
     private fun refreshPenEnabled() {
-        penInput?.setEnabled(resumed && overlayDepth == 0 && selection.isEmpty)
+        penInput?.setEnabled(resumed && windowFocused && overlayDepth == 0 && selection.isEmpty)
+    }
+
+    /**
+     * 窗口失去焦点（下拉通知栏、系统弹窗、音量条等）时暂停直绘：
+     * 文石直绘开启时屏幕不刷新，通知栏会显示不出来，笔也会画到通知栏上。
+     */
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (windowFocused == hasFocus) return
+        windowFocused = hasFocus
+        refreshPenEnabled()
     }
 
     /** 暂停直绘执行 [block] 后恢复：墨水屏需要这样才能刷出应用自己重绘的内容。 */
@@ -1965,9 +1977,10 @@ class EditorActivity : AppCompatActivity() {
         handler.postDelayed(saveRunnable, SAVE_DELAY_MS)
     }
 
+    /** 在后台保存：整本笔记序列化可能要几百毫秒，不能卡住书写。之后立即读取也能拿到这一版。 */
     private fun saveNow() {
         handler.removeCallbacks(saveRunnable)
-        repo.save(note)
+        repo.saveAsync(note)
     }
 
     /** 后台识别离开的页面，结果用于全文搜索与 Obsidian 同步；笔迹没变就跳过。 */
@@ -2065,6 +2078,8 @@ class EditorActivity : AppCompatActivity() {
             player.stop()
             syncCurrentPageFromCanvas()
             saveNow()
+            // 离开编辑器（切到别的应用、熄屏）时确保写到磁盘，进程随后被系统回收也不丢
+            repo.flush()
             autoRecognize(currentPageIndex)
         }
         app.saveToolState(tools)
