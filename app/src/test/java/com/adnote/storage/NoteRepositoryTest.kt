@@ -189,4 +189,34 @@ class NoteRepositoryTrashTest {
         assertEquals("x/笔记.md", n.sync.remoteMdPath)
         assertTrue(n.isDirty)
     }
+
+    @Test
+    fun summariesUseMetaFileAndRegenerateWhenStale() {
+        val repo = NoteRepository(tmp.root)
+        val n = repo.create("周会", "工作", 10, 10)
+        repo.save(n.copy(tags = listOf("team"), coverColor = "#DC2626", updatedAt = 50L))
+        val dir = repo.getNoteDir(n.id)
+        assertTrue(File(dir, "meta.json").exists())
+
+        val s = repo.summaries().single()
+        assertEquals("周会", s.title)
+        assertEquals(listOf("team"), s.tags)
+        assertEquals(1, s.pageCount)
+        assertEquals("#DC2626", s.coverColor)
+        assertTrue(s.isDirty)
+
+        // 旧版本写的笔记没有 meta.json：解析一次并补写
+        File(dir, "meta.json").delete()
+        assertEquals("周会", NoteRepository(tmp.root).summaries().single().title)
+        assertTrue(File(dir, "meta.json").exists())
+
+        // 笔记文件比 meta.json 新（别处改过）：以笔记为准
+        val noteFile = File(dir, "note.json")
+        noteFile.writeText(noteFile.readText().replace("\"周会\"", "\"周会纪要\""))
+        File(dir, "meta.json").setLastModified(1_000L)
+        noteFile.setLastModified(2_000_000L)
+        assertEquals("周会纪要", NoteRepository(tmp.root).summaries().single().title)
+
+        assertEquals(listOf(n.id), NoteSummary.filter(repo.summaries(), "纪要").map { it.id })
+    }
 }

@@ -76,7 +76,30 @@ class NoteRepository(private val root: File) {
             val dir = File(notesDir, n.id).apply { mkdirs() }
             atomicWrite(File(dir, "note.json"), NoteJson.encodeToString(Note.serializer(), n))
             syncStates[n.id] = n.sync
+            writeSummary(dir, NoteSummary.of(n))
         }
+    }
+
+    /**
+     * 全部笔记的列表信息，按修改时间倒序。优先读每篇笔记旁的 meta.json；
+     * 没有或比笔记旧（旧版本写的笔记、别处改过）时解析一次笔记并补写。
+     */
+    fun summaries(): List<NoteSummary> =
+        notesDir.listFiles().orEmpty().mapNotNull { dir ->
+            pending[dir.name]?.let { return@mapNotNull NoteSummary.of(it) }
+            val noteFile = File(dir, "note.json")
+            if (!noteFile.exists()) return@mapNotNull null
+            val metaFile = File(dir, META_FILE)
+            if (metaFile.exists() && metaFile.lastModified() >= noteFile.lastModified()) {
+                runCatching { NoteJson.decodeFromString(NoteSummary.serializer(), metaFile.readText()) }
+                    .getOrNull()?.takeIf { it.id == dir.name }?.let { return@mapNotNull it }
+            }
+            val note = load(dir.name) ?: return@mapNotNull null
+            NoteSummary.of(note).also { runCatching { synchronized(writeLock) { writeSummary(dir, it) } } }
+        }.sortedByDescending { it.updatedAt }
+
+    private fun writeSummary(dir: File, summary: NoteSummary) {
+        atomicWrite(File(dir, META_FILE), NoteJson.encodeToString(NoteSummary.serializer(), summary))
     }
 
     /** 在后台保存。同一笔记排队中的多次保存只写最后一次。 */
@@ -211,6 +234,9 @@ class NoteRepository(private val root: File) {
         File(dst, DELETED_MARK).writeText(now.toString())
     }
 
+    /** 回收站里的笔记数（不解析笔记内容）。 */
+    fun trashCount(): Int = trashDir.listFiles().orEmpty().count { File(it, "note.json").exists() }
+
     fun listTrash(): List<TrashedNote> =
         trashDir.listFiles().orEmpty().mapNotNull { dir ->
             val f = File(dir, "note.json")
@@ -270,6 +296,7 @@ class NoteRepository(private val root: File) {
 
     companion object {
         private const val DELETED_MARK = ".deleted_at"
+        private const val META_FILE = "meta.json"
 
         /** 按关键字、标签、文件夹筛选（在已加载的列表上做，不再读磁盘）。 */
         fun filter(notes: List<Note>, query: String, tag: String? = null, folder: String? = null): List<Note> {

@@ -21,7 +21,7 @@ import androidx.recyclerview.widget.RecyclerView
 import com.adnote.R
 import com.adnote.export.RemotePaths
 import com.adnote.model.Note
-import com.adnote.storage.NoteRepository
+import com.adnote.storage.NoteSummary
 import com.adnote.model.PageTemplate
 import com.adnote.model.PaperPresets
 import com.adnote.model.PinLock
@@ -55,15 +55,16 @@ class MainActivity : AppCompatActivity() {
     }
 
     private val noteAdapter = NoteAdapter(
-        onItemClick = { note -> openNote(note) },
-        onItemLongClick = { note -> showNoteActions(note) }
+        onItemClick = { item -> openNote(item) },
+        // 长按操作要改笔记本身（封面、锁、删除），这时才读取整篇笔记
+        onItemLongClick = { item -> AdNoteApp.instance.repository.load(item.id)?.let(::showNoteActions) }
     )
 
     private var selectedFolder: String? = null
     private var selectedTag: String? = null
 
     /** 在后台读好的全部笔记；筛选、搜索都在这份列表上做，不再每按一个键就把所有笔记读一遍。 */
-    private var allNotes: List<Note> = emptyList()
+    private var allNotes: List<NoteSummary> = emptyList()
     private var trashCount = 0
     private var loaded = false
     private var reloadJob: kotlinx.coroutines.Job? = null
@@ -99,7 +100,7 @@ class MainActivity : AppCompatActivity() {
         EditorActivity.start(this, created.id)
     }
 
-    private fun openNote(note: Note) {
+    private fun openNote(note: NoteSummary) {
         if (!note.isLocked) {
             EditorActivity.start(this, note.id)
             return
@@ -229,7 +230,7 @@ class MainActivity : AppCompatActivity() {
         reloadJob?.cancel()
         reloadJob = lifecycleScope.launch {
             val repo = AdNoteApp.instance.repository
-            val (notes, trash) = withContext(Dispatchers.IO) { repo.list() to repo.listTrash().size }
+            val (notes, trash) = withContext(Dispatchers.IO) { repo.summaries() to repo.trashCount() }
             allNotes = notes
             trashCount = trash
             loaded = true
@@ -291,7 +292,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun refreshNotes() {
         val query = etSearch.text.toString().trim()
-        val list = NoteRepository.filter(allNotes, query = query, tag = selectedTag, folder = selectedFolder)
+        val list = NoteSummary.filter(allNotes, query = query, tag = selectedTag, folder = selectedFolder)
         noteAdapter.submitList(list)
         // 第一次读完之前不显示「还没有笔记」
         layoutEmpty.visibility = if (loaded && list.isEmpty()) View.VISIBLE else View.GONE
@@ -311,7 +312,7 @@ class MainActivity : AppCompatActivity() {
         layoutFilters.addView(btnAll)
 
         // 文件夹按钮
-        val folders = NoteRepository.foldersOf(allNotes)
+        val folders = NoteSummary.foldersOf(allNotes)
         for (folder in folders) {
             val isSelected = selectedFolder == folder
             val btn = createFilterButton("📁 $folder", isSelected) {
@@ -324,7 +325,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         // 标签按钮
-        val tags = NoteRepository.tagsOf(allNotes)
+        val tags = NoteSummary.tagsOf(allNotes)
         for (tag in tags) {
             val isSelected = selectedTag == tag
             val btn = createFilterButton("#$tag", isSelected) {
@@ -499,14 +500,14 @@ private val COVER_COLORS = listOf(
 )
 
 class NoteAdapter(
-    private val onItemClick: (Note) -> Unit,
-    private val onItemLongClick: (Note) -> Unit,
+    private val onItemClick: (NoteSummary) -> Unit,
+    private val onItemLongClick: (NoteSummary) -> Unit,
 ) : RecyclerView.Adapter<NoteAdapter.ViewHolder>() {
 
-    private var items: List<Note> = emptyList()
+    private var items: List<NoteSummary> = emptyList()
     private val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault())
 
-    fun submitList(list: List<Note>) {
+    fun submitList(list: List<NoteSummary>) {
         items = list
         notifyDataSetChanged()
     }
@@ -533,17 +534,17 @@ class NoteAdapter(
         private val tvTags: TextView = view.findViewById(R.id.tvTags)
         private val viewCover: View = view.findViewById(R.id.viewCover)
 
-        fun bind(note: Note) {
+        fun bind(note: NoteSummary) {
             tvTitle.text = if (note.isLocked) "🔒 ${note.title}" else note.title
             val cover = note.coverColor
             viewCover.visibility = if (cover != null) View.VISIBLE else View.GONE
             if (cover != null) viewCover.setBackgroundColor(StrokePainter.parseColor(cover))
             tvPdfBadge.visibility = if (note.isPdf) View.VISIBLE else View.GONE
             tvFolder.text = note.folder
-            tvPageCount.text = "${note.pages.size} 页"
+            tvPageCount.text = "${note.pageCount} 页"
             tvDate.text = dateFormat.format(Date(note.updatedAt))
 
-            if (note.isDirty || note.sync.lastSyncedAt == 0L) {
+            if (note.isDirty) {
                 tvSyncBadge.visibility = View.VISIBLE
                 tvSyncBadge.text = "● 待同步"
             } else {
