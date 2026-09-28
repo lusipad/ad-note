@@ -50,6 +50,19 @@ object PageTemplateRenderer {
     ) {
         val paper = PaperPresets.find(backgroundColorHex)
         canvas.drawColor(color(paper.hex))
+        renderLines(canvas, template, backgroundColorHex, width, height, minLine)
+    }
+
+    /** 只画底纹线条，不铺纸色（叠加在自定义背景图上时使用）。 */
+    @Synchronized
+    fun renderLines(
+        canvas: Canvas,
+        template: PageTemplate,
+        backgroundColorHex: String,
+        width: Int,
+        height: Int,
+        minLine: Float = 0f,
+    ) {
         if (template == PageTemplate.BLANK) return
 
         dashedPaint.pathEffect = DashPathEffect(TemplateLayout.dashIntervals(width), 0f)

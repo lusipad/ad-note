@@ -10,6 +10,8 @@ import com.onyx.android.sdk.api.device.epd.UpdateMode
 
 object EinkRefresher {
 
+    private var pageTurns = 0
+
     /**
      * 全刷屏幕以消除残影。
      * 1. 优先调用文石 SDK EpdController (若在文石/得到设备上)。
@@ -17,6 +19,7 @@ object EinkRefresher {
      * 3. 在普通彩屏（小米、vivo 等平板）上，仅执行常规重绘，不发生任何黑白闪烁。
      */
     fun fullRefresh(view: View) {
+        pageTurns = 0
         val onyxSuccess = runCatching {
             EpdController.refreshScreen(view, UpdateMode.GC)
             true
@@ -34,6 +37,24 @@ object EinkRefresher {
             view.invalidate()
         }
     }
+
+    /**
+     * 翻页刷新：平时用文石的快速局部刷新（GU/REGAL，无黑闪），每翻 [fullEvery] 页做一次全刷清残影。
+     * [fullEvery] 为 0 表示从不自动全刷。普通彩屏上什么也不做（正常重绘即可）。
+     */
+    fun onPageTurned(view: View, fullEvery: Int) {
+        pageTurns++
+        if (fullEvery > 0 && pageTurns >= fullEvery) {
+            if (DeviceDetector.detect().screenCategory == ScreenCategory.EINK) fullRefresh(view) else pageTurns = 0
+            return
+        }
+        val mode = modeNamed("REGAL") ?: modeNamed("GU") ?: return
+        runCatching { EpdController.refreshScreen(view, mode) }
+    }
+
+    /** 按名称取刷新模式；不同 SDK 版本提供的模式不同，找不到返回 null。 */
+    private fun modeNamed(name: String): UpdateMode? =
+        runCatching { UpdateMode::class.java.enumConstants?.firstOrNull { it.toString() == name } }.getOrNull()
 
     /**
      * 通用墨水屏物理闪刷：在掌阅、汉王等无公开 API 的墨水屏上，通过瞬时全屏黑白反转

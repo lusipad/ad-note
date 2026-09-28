@@ -8,13 +8,13 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-class StrokeHistoryTest {
+class EditHistoryTest {
 
     private fun stroke(id: String) = Stroke(id = id, points = listOf(InkPoint(0f, 0f)))
 
     @Test
     fun undoRedoRoundTrip() {
-        val h = StrokeHistory()
+        val h = EditHistory<List<Stroke>>()
         val empty = emptyList<Stroke>()
         val one = listOf(stroke("a"))
         val two = one + stroke("b")
@@ -36,7 +36,7 @@ class StrokeHistoryTest {
 
     @Test
     fun newActionClearsRedo() {
-        val h = StrokeHistory()
+        val h = EditHistory<List<Stroke>>()
         h.record(emptyList())
         h.undo(listOf(stroke("a")))
         assertTrue(h.canRedo)
@@ -47,7 +47,7 @@ class StrokeHistoryTest {
 
     @Test
     fun limitDropsOldestEntries() {
-        val h = StrokeHistory(limit = 3)
+        val h = EditHistory<List<Stroke>>(limit = 3)
         repeat(5) { h.record(listOf(stroke("s$it"))) }
         var steps = 0
         var cur = emptyList<Stroke>()

@@ -85,3 +85,78 @@ class PageOpsTest {
         assertTrue(PageOps.clearStrokes(n, 0).pages[0].strokes.isEmpty())
     }
 }
+
+class PageOpsLayoutTest {
+    private val note = Note(
+        title = "t",
+        pages = listOf(Page(id = "p", width = 1000, height = 1400)),
+        createdAt = 0, updatedAt = 0,
+    )
+
+    @Test
+    fun orientationSwapsDimensions() {
+        val p = PageOps.toggleOrientation(note, 0).pages[0]
+        assertEquals(1400, p.width)
+        assertEquals(1000, p.height)
+    }
+
+    @Test
+    fun extendDownIsCapped() {
+        var n = note
+        repeat(20) { n = PageOps.extendDown(n, 0) }
+        assertEquals((1000 * PageOps.MAX_ASPECT).toInt(), n.pages[0].height)
+        assertSame(n, PageOps.extendDown(n, 0))
+    }
+
+    @Test
+    fun bookmarks() {
+        val b = PageOps.setBookmark(note, 0, "  第一章 ")
+        assertEquals("第一章", b.pages[0].bookmark)
+        assertEquals(null, PageOps.setBookmark(b, 0, " ").pages[0].bookmark)
+        assertTrue(b.searchableText().contains("第一章"))
+    }
+}
+
+class LegacyCoordsTest {
+    private fun note(pdf: Boolean, version: Int = 0) = Note(
+        title = "t",
+        pages = listOf(Page(width = 1190, height = 1684, strokes = listOf(
+            Stroke(id = "s", points = listOf(InkPoint(1404f, 1500f)), width = 4f),
+        ))),
+        createdAt = 0, updatedAt = 0,
+        pdfPath = if (pdf) "document.pdf" else null,
+        coordVersion = version,
+    )
+
+    @Test
+    fun pdfPagesScaleEachAxis() {
+        val out = LegacyCoords.migrate(note(pdf = true), viewW = 1404, viewH = 1500)
+        val p = out.pages[0].strokes[0].points[0]
+        assertEquals(1190f, p.x, 0.01f)
+        assertEquals(1684f, p.y, 0.01f)
+        assertEquals(LegacyCoords.CURRENT, out.coordVersion)
+    }
+
+    @Test
+    fun notebookPagesScaleUniformly() {
+        val out = LegacyCoords.migrate(note(pdf = false), viewW = 1404, viewH = 1500)
+        val s = out.pages[0].strokes[0]
+        assertEquals(1190f, s.points[0].x, 0.01f)
+        assertEquals(1500f * 1190f / 1404f, s.points[0].y, 0.01f)
+        assertEquals(4f * 1190f / 1404f, s.width, 0.01f)
+    }
+
+    @Test
+    fun migratedNotesAreLeftAlone() {
+        val n = note(pdf = true, version = LegacyCoords.CURRENT)
+        assertSame(n, LegacyCoords.migrate(n, 100, 100))
+    }
+
+    @Test
+    fun newNotesStartAtCurrentVersion() {
+        val tmp = kotlin.io.path.createTempDirectory().toFile()
+        val repo = com.adnote.storage.NoteRepository(tmp)
+        assertEquals(LegacyCoords.CURRENT, repo.create("n", "f", 10, 10).coordVersion)
+        tmp.deleteRecursively()
+    }
+}

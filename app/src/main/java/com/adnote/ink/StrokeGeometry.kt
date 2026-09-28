@@ -43,7 +43,7 @@ object StrokeGeometry {
             var dy = next.y - prev.y
             val len = hypot(dx, dy)
             if (len == 0f) { dx = 1f; dy = 0f } else { dx /= len; dy /= len }
-            var half = widthAt(stroke, pts[i].pressure) / 2f
+            var half = widthAt(stroke, pts[i].pressure) / 2f * tiltFactor(stroke.pen, pts[i].tilt)
             if (stroke.pen.taper) half *= taperFactor(i, pts.size)
             // 法线 (-dy, dx)
             left += Pt(pts[i].x - dy * half, pts[i].y + dx * half)
@@ -59,6 +59,12 @@ object StrokeGeometry {
     fun dotRadius(stroke: Stroke): Float {
         val p = stroke.points.firstOrNull() ?: return stroke.width / 2f
         return widthAt(stroke, p.pressure) / 2f
+    }
+
+    /** 铅笔侧锋：笔身越倾斜线条越宽，完全放平时最多 2.5 倍。其他笔型不受倾角影响。 */
+    internal fun tiltFactor(pen: PenType, tilt: Float): Float {
+        if (pen != PenType.PENCIL || tilt <= 0f) return 1f
+        return 1f + 1.5f * (tilt / (Math.PI.toFloat() / 2f)).coerceIn(0f, 1f)
     }
 
     /** 毛笔两端收细：端点处 0.25 倍，逐渐过渡到 1 倍。 */

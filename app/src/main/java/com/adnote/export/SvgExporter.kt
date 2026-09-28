@@ -1,12 +1,18 @@
 package com.adnote.export
 
 import com.adnote.ink.StrokeGeometry
+import com.adnote.ink.TextLayout
+import com.adnote.model.ImageItem
 import com.adnote.model.Page
 import com.adnote.model.PageTemplate
+import com.adnote.model.Stroke
+import com.adnote.model.TextBox
+import com.adnote.model.layerContents
 import com.adnote.template.TemplateDot
 import com.adnote.template.TemplateLayout
 import com.adnote.template.TemplateLine
 import com.adnote.template.TemplateRect
+import java.util.Base64
 import java.util.Locale
 
 /**
@@ -16,47 +22,97 @@ import java.util.Locale
  */
 object SvgExporter {
 
-    fun export(page: Page): String = buildString {
+    /**
+     * @param assets 按相对笔记目录的路径读取图片字节；图片以 data URI 内嵌，
+     *   这样 SVG 作为 Obsidian 里的 <img> 显示时也能看到图片。
+     */
+    fun export(page: Page, assets: (String) -> ByteArray? = { null }): String = buildString {
         append("""<svg xmlns="http://www.w3.org/2000/svg" """)
         append("""viewBox="0 0 ${page.width} ${page.height}" width="${page.width}" height="${page.height}">""")
         append('\n')
         val bgFill = if (page.backgroundColor.isNotBlank()) page.backgroundColor.lowercase() else "#ffffff"
         append("""<rect width="100%" height="100%" fill="$bgFill"/>""").append('\n')
 
+        page.backgroundImage?.let { path ->
+            dataUri(path, assets)?.let { uri ->
+                append("""<image x="0" y="0" width="${page.width}" height="${page.height}" """)
+                append("""preserveAspectRatio="xMidYMid slice" href="$uri"/>""").append('\n')
+            }
+        }
+
         append(templateSvg(page))
 
-        for (stroke in page.strokes) {
-            val color = if (stroke.color.isNotBlank()) stroke.color.lowercase() else "#000000"
-            val opacity = if (stroke.pen.opacity < 1f) """ opacity="${f2(stroke.pen.opacity)}"""" else ""
-
-            if (stroke.pen.constantWidth && stroke.points.size > 1) {
-                val line = StrokeGeometry.centerline(stroke)
-                append("""<path fill="none" stroke="$color" stroke-width="${f(stroke.width)}" """)
-                append("""stroke-linecap="round" stroke-linejoin="round"$opacity d="M""")
-                line.forEachIndexed { i, pt ->
-                    if (i > 0) append(" L")
-                    append(f(pt.x)).append(' ').append(f(pt.y))
-                }
-                append("\"/>\n")
-                continue
-            }
-
-            val outline = StrokeGeometry.outline(stroke)
-            if (outline.isEmpty()) {
-                val p = stroke.points.firstOrNull() ?: continue
-                val r = StrokeGeometry.dotRadius(stroke)
-                append("""<circle cx="${f(p.x)}" cy="${f(p.y)}" r="${f(r)}" fill="$color"$opacity/>""").append('\n')
-                continue
-            }
-            append("""<path fill="$color"$opacity d="M""")
-            outline.forEachIndexed { i, pt ->
-                if (i > 0) append(" L")
-                append(f(pt.x)).append(' ').append(f(pt.y))
-            }
-            append(""" Z"/>""").append('\n')
+        for (content in page.layerContents()) {
+            content.images.forEach { appendImage(it, assets) }
+            content.strokes.forEach { appendStroke(it) }
+            content.texts.forEach { appendText(it, page.width) }
         }
         append("</svg>\n")
     }
+
+    private fun StringBuilder.appendStroke(stroke: Stroke) {
+        val color = if (stroke.color.isNotBlank()) stroke.color.lowercase() else "#000000"
+        val opacity = if (stroke.pen.opacity < 1f) """ opacity="${f2(stroke.pen.opacity)}"""" else ""
+
+        if (stroke.pen.constantWidth && stroke.points.size > 1) {
+            val line = StrokeGeometry.centerline(stroke)
+            append("""<path fill="none" stroke="$color" stroke-width="${f(stroke.width)}" """)
+            append("""stroke-linecap="round" stroke-linejoin="round"$opacity d="M""")
+            line.forEachIndexed { i, pt ->
+                if (i > 0) append(" L")
+                append(f(pt.x)).append(' ').append(f(pt.y))
+            }
+            append("\"/>\n")
+            return
+        }
+
+        val outline = StrokeGeometry.outline(stroke)
+        if (outline.isEmpty()) {
+            val p = stroke.points.firstOrNull() ?: return
+            val r = StrokeGeometry.dotRadius(stroke)
+            append("""<circle cx="${f(p.x)}" cy="${f(p.y)}" r="${f(r)}" fill="$color"$opacity/>""").append('\n')
+            return
+        }
+        append("""<path fill="$color"$opacity d="M""")
+        outline.forEachIndexed { i, pt ->
+            if (i > 0) append(" L")
+            append(f(pt.x)).append(' ').append(f(pt.y))
+        }
+        append(""" Z"/>""").append('\n')
+    }
+
+    private fun StringBuilder.appendText(box: TextBox, pageWidth: Int) {
+        val color = box.color.lowercase()
+        val deco = if (box.linkPageId != null) """ text-decoration="underline"""" else ""
+        append("""<text font-family="sans-serif" font-size="${f(box.size)}" fill="$color"$deco>""")
+        TextLayout.lines(box, pageWidth).forEachIndexed { i, line ->
+            val baseline = box.y + box.size * (i * TextLayout.LINE_HEIGHT + BASELINE)
+            append("""<tspan x="${f(box.x)}" y="${f(baseline)}">""").append(escapeXml(line)).append("</tspan>")
+        }
+        append("</text>\n")
+    }
+
+    private fun StringBuilder.appendImage(img: ImageItem, assets: (String) -> ByteArray?) {
+        val uri = dataUri(img.path, assets) ?: return
+        append("""<image x="${f(img.x)}" y="${f(img.y)}" width="${f(img.width)}" height="${f(img.height)}" """)
+        append("""preserveAspectRatio="none" href="$uri"/>""").append('\n')
+    }
+
+    private fun dataUri(path: String, assets: (String) -> ByteArray?): String? {
+        val bytes = assets(path) ?: return null
+        val mime = when (path.substringAfterLast('.').lowercase()) {
+            "png" -> "image/png"
+            "webp" -> "image/webp"
+            else -> "image/jpeg"
+        }
+        return "data:$mime;base64," + Base64.getEncoder().encodeToString(bytes)
+    }
+
+    internal fun escapeXml(s: String): String =
+        s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;")
+
+    /** 第一行基线相对文字框顶部的位置（字号的倍数），屏幕渲染使用同一数值。 */
+    const val BASELINE = 0.95f
 
     /** 底纹图元转为 SVG 片段；空白模板返回空串。 */
     fun templateSvg(page: Page): String {

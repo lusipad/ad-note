@@ -62,6 +62,26 @@
   - **套索选择**：圈选笔迹后可拖动移动、删除、复制、批量改色；
   - **撤销 / 重做**：每页独立历史（最多 100 步），书写、擦除、清空、移动选区都可撤销；外接键盘支持 Ctrl+Z / Ctrl+Y；
   - **工具状态记忆**：每种工具独立记住颜色和粗细，重新打开笔记时恢复。
+- 🧰 **v0.3.0 新增：对齐原生笔记的能力**：
+  - **缩放与平移**：双指缩放（最高 5 倍）、拖动平移，双击或点「复位」回到整页；页面按宽度铺满、超长页面可上下滚动；
+  - **形状**：形状工具画完即规整；普通钢笔画完**停住半秒**也会自动变成直线、三角形、矩形、椭圆/圆；**直尺**贴边画直线，可拖动、双指旋转；
+  - **划掉即删除**：在笔迹上来回涂抹，被涂到的笔画直接删除；
+  - **文字框**：点按页面输入文字（字号、颜色可选），可把文字**链接到其他页面**；套索选中手写可一键「转文字」；
+  - **图片**：插入相册图片，可拖动缩放；**自定义背景**：用图片或 PDF 第一页铺满页面，可叠加底纹；
+  - **图层**：新建、重命名、显示/隐藏、调整上下顺序；书写、擦除、套索只作用于当前图层；
+  - **套索增强**：拖动、拖角缩放、拖顶部圆点旋转；剪切/拷贝后可**跨页、跨笔记粘贴**（图片一并复制）；
+  - **多指手势**：两指点按撤销、三指点按重做；
+  - **录音**：边记边录，按页记录，列表回放、跳页；同步时上传并在 Markdown 里嵌入；
+  - **导出与分享**：整本导出 PDF（含 PDF 原文底图）、本页导出 PNG，调起系统分享；
+  - **目录与书签**：给页面加书签，目录一键跳转；书签同时写入 Markdown 标题；
+  - **页面形态**：本页横竖切换、向下延长（长笔记）；
+  - **自动识别**：离开页面时后台识别手写（需已下载离线模型），用于全文搜索和同步；
+  - **回收站**：删除的笔记先进回收站，30 天内可恢复；**PIN 锁**（访问锁，文件本身不加密）；**封面色**；
+  - **速记入口**：桌面长按图标「速记」、桌面小部件，一键新建并进入手写。
+- ⚡ **书写体验与设备适配**：
+  - **普通平板低延迟**：Android 11+ 非缓冲事件分发，Android 14+ 系统运动预测补齐笔迹末端；
+  - **悬停光标**：笔尖靠近屏幕即显示落笔位置或橡皮范围；**笔身按键**可设为橡皮、套索或荧光笔；**铅笔侧锋**随笔身倾角变粗；
+  - **文石适配补全**：浮动面板不再被直绘层误当成书写（排除区域）；压感上限向固件查询；翻页用快速局部刷新，每 N 页自动全刷一次（可设置）。
 - 📑 **页面管理与翻页**：
   - **加页**：在当前页后插入新页（沿用本页底纹与纸色），在最后一页点「下一页」自动新建；
   - **页面概览**：点击页码打开缩略图网格，点按跳转，长按可前移/后移、复制、插入或删除页面；
@@ -118,8 +138,9 @@
 
 ```
 com.adnote
-├── model/        Note、Page、Stroke、PenType、ToolState、PageOps（纯数据模型与页面操作，kotlinx.serialization）
-├── ink/          StrokeGeometry（笔型轮廓算法）、Eraser（整笔/局部擦除）、Lasso（套索选择）、StrokeHistory（撤销重做）
+├── model/        Note、Page、Stroke、TextBox、ImageItem、Layer、Recording、PenType、ToolState、PageOps、Viewport、PinLock
+├── ink/          StrokeGeometry、Eraser（整笔/局部）、Lasso/Selection（套索与选区变换）、EditHistory（撤销重做）、
+│                 ShapeRecognizer（形状规整）、ScratchOut（划掉删除）、Ruler（直尺吸附）、TextLayout（文字排版）
 ├── template/     TemplateLayout（底纹几何，屏幕/PDF/SVG 共用）
 ├── pdf/          PdfImporter、PdfPageRenderer（LRU 缓存渲染）、PdfExporter（图层合并导出）
 ├── storage/      NoteRepository（本地原子文件存储、删除墓碑 Tombstone、全文检索）
@@ -127,7 +148,8 @@ com.adnote
 ├── sync/         WebDavClient（基于 OkHttp 的标准 WebDAV 实现）、SyncEngine（同步调度器）
 ├── recognition/  Recognizer 接口 + MlKitRecognizer（Google ML Kit 中文离线手写识别）
 ├── pen/          PenInput 接口、OnyxPenInput（文石低延迟）、MotionPenInput（触控兜底）、EinkRefresher
-└── ui/           MainActivity、EditorActivity（工具栏与页面管理）、InkCanvasView（位图缓存画布）、StrokePainter、TemplatePicker、PageOverviewAdapter
+└── ui/           MainActivity、EditorActivity、InkCanvasView（缩放视口 + 位图缓存画布）、PageRenderer（屏幕/缩略图/导出共用）、
+                  NoteExporter、ImageImporter、AudioController、TemplatePicker、PageOverviewAdapter、QuickNoteWidget
 ```
 
 ---

@@ -25,6 +25,7 @@ import kotlinx.coroutines.withContext
 class PageOverviewAdapter(
     private val scope: CoroutineScope,
     private val pdfRenderer: PdfPageRenderer?,
+    private val assets: BitmapAssets?,
     private val thumbWidthPx: Int,
     private val onClick: (Int) -> Unit,
     private val onLongClick: (Int, View) -> Unit,
@@ -53,7 +54,7 @@ class PageOverviewAdapter(
 
     override fun onBindViewHolder(holder: Holder, position: Int) {
         val page = pages[position]
-        holder.number.text = "${position + 1}"
+        holder.number.text = page.bookmark?.let { "${position + 1} · $it" } ?: "${position + 1}"
         holder.frame.setBackgroundResource(
             if (position == currentIndex) R.drawable.bg_page_thumb_current else R.drawable.bg_page_thumb
         )
@@ -82,26 +83,16 @@ class PageOverviewAdapter(
 
     /** PDF 底图与页码绑定，所以 PDF 笔记的键里带上页码。 */
     private fun keyOf(page: Page, position: Int): String =
-        "${page.id}:${System.identityHashCode(page.strokes)}:${page.template}:${page.backgroundColor}:" +
-            if (pdfRenderer != null) position else ""
+        "${page.id}:${System.identityHashCode(page)}:" + if (pdfRenderer != null) position else ""
 
     private fun render(page: Page, index: Int, w: Int, h: Int): Bitmap {
         val bmp = Bitmap.createBitmap(w.coerceAtLeast(1), h.coerceAtLeast(1), Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bmp)
         val scale = w / page.width.coerceAtLeast(1).toFloat()
         val pdfBg = pdfRenderer?.renderThumbnail(index, bmp.width, bmp.height)
-        if (pdfBg != null) {
-            canvas.drawBitmap(pdfBg, 0f, 0f, null)
-            pdfBg.recycle()
-        }
         canvas.scale(scale, scale)
-        val painter = StrokePainter()
-        if (pdfBg == null) {
-            PageTemplateRenderer.render(
-                canvas, page.template, page.backgroundColor, page.width, page.height, minLine = 1f / scale
-            )
-        }
-        painter.drawAll(canvas, page.strokes)
+        PageRenderer(assets).drawPage(canvas, page, pdfBg, minLine = 1f / scale)
+        pdfBg?.recycle()
         return bmp
     }
 }

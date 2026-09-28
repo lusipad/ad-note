@@ -9,6 +9,7 @@ import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import com.adnote.R
+import com.adnote.model.StylusButtonAction
 import com.adnote.pen.DeviceDetector
 import com.adnote.pen.EinkRefresher
 import com.adnote.pen.PenInputFactory
@@ -33,6 +34,11 @@ class SettingsActivity : AppCompatActivity() {
     private lateinit var cbPreferOnyx: CheckBox
     private lateinit var cbVolumeKeyPaging: CheckBox
     private lateinit var cbFingerSwipePaging: CheckBox
+    private lateinit var cbScratchOut: CheckBox
+    private lateinit var cbShapeHold: CheckBox
+    private lateinit var cbAutoRecognize: CheckBox
+    private lateinit var btnStylusButton: Button
+    private lateinit var btnFullRefreshEvery: Button
     private lateinit var btnFullRefreshTest: Button
     private lateinit var tvModelStatus: TextView
     private lateinit var btnDownloadModel: Button
@@ -61,9 +67,20 @@ class SettingsActivity : AppCompatActivity() {
         cbPreferOnyx = findViewById(R.id.cbPreferOnyx)
         cbVolumeKeyPaging = findViewById(R.id.cbVolumeKeyPaging)
         cbFingerSwipePaging = findViewById(R.id.cbFingerSwipePaging)
+        cbScratchOut = findViewById(R.id.cbScratchOut)
+        cbShapeHold = findViewById(R.id.cbShapeHold)
+        cbAutoRecognize = findViewById(R.id.cbAutoRecognize)
+        btnStylusButton = findViewById(R.id.btnStylusButton)
+        btnFullRefreshEvery = findViewById(R.id.btnFullRefreshEvery)
         btnFullRefreshTest = findViewById(R.id.btnFullRefreshTest)
         tvModelStatus = findViewById(R.id.tvModelStatus)
         btnDownloadModel = findViewById(R.id.btnDownloadModel)
+    }
+
+    private fun updateOptionButtons() {
+        val app = AdNoteApp.instance
+        btnStylusButton.text = "笔身按键：${app.stylusButtonAction.displayName}"
+        btnFullRefreshEvery.text = "翻页全刷：" + if (app.fullRefreshEvery == 0) "从不" else "每 ${app.fullRefreshEvery} 页"
     }
 
     private fun loadCurrentSettings() {
@@ -78,6 +95,10 @@ class SettingsActivity : AppCompatActivity() {
         cbPreferOnyx.isChecked = app.preferOnyx
         cbVolumeKeyPaging.isChecked = app.volumeKeyPaging
         cbFingerSwipePaging.isChecked = app.fingerSwipePaging
+        cbScratchOut.isChecked = app.scratchOut
+        cbShapeHold.isChecked = app.shapeHold
+        cbAutoRecognize.isChecked = app.autoRecognize
+        updateOptionButtons()
     }
 
     private fun getSettingsFromInput(): SyncSettings {
@@ -104,6 +125,32 @@ class SettingsActivity : AppCompatActivity() {
 
         cbFingerSwipePaging.setOnCheckedChangeListener { _, isChecked ->
             AdNoteApp.instance.setFingerSwipePaging(isChecked)
+        }
+
+        cbScratchOut.setOnCheckedChangeListener { _, v -> AdNoteApp.instance.setScratchOut(v) }
+        cbShapeHold.setOnCheckedChangeListener { _, v -> AdNoteApp.instance.setShapeHold(v) }
+        cbAutoRecognize.setOnCheckedChangeListener { _, v -> AdNoteApp.instance.setAutoRecognize(v) }
+
+        btnStylusButton.setOnClickListener {
+            val actions = StylusButtonAction.entries
+            androidx.appcompat.app.AlertDialog.Builder(this)
+                .setTitle("笔身按键（标准触控通道）")
+                .setItems(actions.map { it.displayName }.toTypedArray()) { _, which ->
+                    AdNoteApp.instance.setStylusButtonAction(actions[which])
+                    updateOptionButtons()
+                }
+                .show()
+        }
+
+        btnFullRefreshEvery.setOnClickListener {
+            val options = listOf(0, 3, 6, 10, 20)
+            androidx.appcompat.app.AlertDialog.Builder(this)
+                .setTitle("墨水屏翻页自动全刷")
+                .setItems(options.map { if (it == 0) "从不" else "每翻 $it 页" }.toTypedArray()) { _, which ->
+                    AdNoteApp.instance.setFullRefreshEvery(options[which])
+                    updateOptionButtons()
+                }
+                .show()
         }
 
         cbPreferOnyx.setOnCheckedChangeListener { _, isChecked ->

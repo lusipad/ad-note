@@ -66,3 +66,20 @@ class ToolStateTest {
         assertEquals(PenType.FOUNTAIN, stroke.pen)
     }
 }
+
+class ModelCompatTest {
+    @Test
+    fun newFieldsHaveCompactDefaultsAndOldJsonStillLoads() {
+        val json = NoteJson.encodeToString(Stroke.serializer(), Stroke(id = "a", points = listOf(InkPoint(1f, 2f))))
+        assert(!json.contains("tilt")) { json }
+        assert(!json.contains("layer")) { json }
+
+        val legacyPage = """{"id":"p","width":10,"height":20,"strokes":[]}"""
+        val page = NoteJson.decodeFromString(Page.serializer(), legacyPage)
+        assertEquals(listOf(Layer.DEFAULT), page.layers)
+        assertEquals(emptyList<TextBox>(), page.texts)
+
+        val tilted = InkPoint(1f, 1f, tilt = 0.7f)
+        assertEquals(tilted, NoteJson.decodeFromString(InkPoint.serializer(), NoteJson.encodeToString(InkPoint.serializer(), tilted)))
+    }
+}

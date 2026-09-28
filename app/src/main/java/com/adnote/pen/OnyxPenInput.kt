@@ -21,6 +21,14 @@ class OnyxPenInput : PenInput {
     private var listener: PenInputListener? = null
     private val mainHandler = Handler(Looper.getMainLooper())
 
+    /** 设备压感最大值：不同型号不同（4096 / 8192），优先向固件查询。 */
+    private val maxPressure: Float by lazy {
+        runCatching {
+            val epd = Class.forName("com.onyx.android.sdk.api.device.epd.EpdController")
+            (epd.getMethod("getMaxTouchPressure").invoke(null) as Number).toFloat()
+        }.getOrNull()?.takeIf { it > 0f } ?: 4096f
+    }
+
     private val currentStrokePoints = ArrayList<InkPoint>()
     private val currentErasePoints = ArrayList<InkPoint>()
 
@@ -149,6 +157,13 @@ class OnyxPenInput : PenInput {
         }.onFailure { Log.w("OnyxPenInput", "当前 SDK 不支持关闭直绘渲染: ${it.message}") }
     }
 
+    override fun setExcludeRects(rects: List<Rect>) {
+        val helper = touchHelper ?: return
+        runCatching {
+            helper.javaClass.getMethod("setExcludeRect", List::class.java).invoke(helper, rects)
+        }.onFailure { Log.w("OnyxPenInput", "当前 SDK 不支持排除区域: ${it.message}") }
+    }
+
     override fun detach() {
         runCatching {
             touchHelper?.closeRawDrawing()
@@ -161,7 +176,7 @@ class OnyxPenInput : PenInput {
         InkPoint(
             x = this.x,
             y = this.y,
-            pressure = (this.pressure / 4096f).coerceIn(0f, 1f).let { if (it == 0f) 0.5f else it },
+            pressure = (this.pressure / maxPressure).coerceIn(0f, 1f).let { if (it == 0f) 0.5f else it },
             t = if (this.timestamp > 0) this.timestamp else System.currentTimeMillis()
         )
 }

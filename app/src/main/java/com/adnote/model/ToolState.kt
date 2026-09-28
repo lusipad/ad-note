@@ -4,7 +4,7 @@ import kotlinx.serialization.Serializable
 
 /** 编辑器当前工具。 */
 @Serializable
-enum class Tool { PEN, HIGHLIGHTER, ERASER, LASSO }
+enum class Tool { PEN, HIGHLIGHTER, ERASER, LASSO, SHAPE, TEXT }
 
 /** 橡皮擦模式。 */
 @Serializable
@@ -38,6 +38,9 @@ data class ToolState(
     val highlighterWidth: Float = PenPresets.HIGHLIGHTER_WIDTH,
     val eraserMode: EraserMode = EraserMode.PARTIAL,
     val eraserSize: EraserSize = EraserSize.MEDIUM,
+    /** 文字工具的字号（页面像素）与颜色。 */
+    val textSize: Float = 40f,
+    val textColor: String = PenPresets.BLACK.hex,
     /** 笔工具的最近使用颜色，工具栏上的快捷色板。 */
     val recentPenColors: List<String> = listOf(
         PenPresets.BLACK.hex, PenPresets.BLUE.hex, PenPresets.RED.hex, PenPresets.GREEN.hex,
@@ -78,4 +81,13 @@ data class ToolState(
 
         fun toJson(state: ToolState): String = NoteJson.encodeToString(serializer(), state)
     }
+}
+
+/** 笔身按键按下时书写的效果（仅标准触控通道；文石固件的侧键固定为橡皮）。 */
+@Serializable
+enum class StylusButtonAction(val displayName: String) {
+    ERASER("橡皮擦"),
+    LASSO("套索选择"),
+    HIGHLIGHTER("荧光笔"),
+    NONE("不处理（照常书写）"),
 }

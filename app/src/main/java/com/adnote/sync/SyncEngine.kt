@@ -124,13 +124,22 @@ class SyncEngine(
 
         // 4. 上传各页 SVG
         for ((index, page) in noteWithTags.pages.withIndex()) {
-            val svg = SvgExporter.export(page)
+            val svg = SvgExporter.export(page) { rel -> repository.readAsset(originalNote.id, rel) }
             val fileName = MarkdownComposer.pageFileName(index)
             webDavClient.put("$targetInkDir/$fileName", svg, "image/svg+xml; charset=utf-8")
         }
         // 本地删过页：清理远端多出来的 page-NNN.svg
         for (index in noteWithTags.pages.size until originalNote.sync.remotePageCount) {
             webDavClient.delete("$targetInkDir/${MarkdownComposer.pageFileName(index)}")
+        }
+
+        // 录音只上传一次（按 id 记录），文件较大
+        val uploaded = originalNote.sync.uploadedRecordings.toMutableSet()
+        for (rec in noteWithTags.recordings) {
+            if (rec.id in uploaded) continue
+            val bytes = repository.readAsset(originalNote.id, rec.path) ?: continue
+            webDavClient.putBytes("$targetInkDir/${rec.path}", bytes, "audio/mp4")
+            uploaded += rec.id
         }
 
         // 5. 上传原始 ink.json（供灾备恢复）
@@ -144,6 +153,7 @@ class SyncEngine(
                 remoteMdPath = targetMdPath,
                 remoteMdEtag = putMdResp.etag ?: existingResp?.etag,
                 remotePageCount = noteWithTags.pages.size,
+                uploadedRecordings = uploaded.filter { id -> noteWithTags.recordings.any { it.id == id } },
             ),
         )
         repository.save(updatedNote)

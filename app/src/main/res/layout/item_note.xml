@@ -9,6 +9,14 @@
     android:clickable="true"
     android:focusable="true">
 
+    <!-- 封面色条 -->
+    <View
+        android:id="@+id/viewCover"
+        android:layout_width="match_parent"
+        android:layout_height="5dp"
+        android:layout_marginBottom="10dp"
+        android:visibility="gone" />
+
     <!-- 标题与状态徽标栏 -->
     <LinearLayout
         android:layout_width="match_parent"

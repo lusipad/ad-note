@@ -196,7 +196,29 @@
                 android:src="@drawable/ic_lasso"
                 android:padding="7dp"
                 android:scaleType="fitCenter"
-                android:contentDescription="套索选择" />
+                android:contentDescription="套索选择"
+                android:layout_marginEnd="6dp" />
+
+            <ImageButton
+                android:id="@+id/btnToolShape"
+                android:layout_width="40dp"
+                android:layout_height="36dp"
+                android:background="@drawable/bg_button_secondary"
+                android:src="@drawable/ic_shape"
+                android:padding="7dp"
+                android:scaleType="fitCenter"
+                android:contentDescription="形状（画完自动规整）"
+                android:layout_marginEnd="6dp" />
+
+            <ImageButton
+                android:id="@+id/btnToolText"
+                android:layout_width="40dp"
+                android:layout_height="36dp"
+                android:background="@drawable/bg_button_secondary"
+                android:src="@drawable/ic_text"
+                android:padding="7dp"
+                android:scaleType="fitCenter"
+                android:contentDescription="文字框" />
 
             <View
                 android:layout_width="1dp"
@@ -253,6 +275,55 @@
                 android:layout_marginHorizontal="10dp"
                 android:background="@color/border_hairline" />
 
+
+            <ImageButton
+                android:id="@+id/btnRuler"
+                android:layout_width="40dp"
+                android:layout_height="36dp"
+                android:background="@drawable/bg_button_secondary"
+                android:src="@drawable/ic_ruler"
+                android:padding="7dp"
+                android:scaleType="fitCenter"
+                android:contentDescription="直尺"
+                android:layout_marginEnd="6dp" />
+
+            <ImageButton
+                android:id="@+id/btnInsertImage"
+                android:layout_width="40dp"
+                android:layout_height="36dp"
+                android:background="@drawable/bg_button_secondary"
+                android:src="@drawable/ic_image"
+                android:padding="7dp"
+                android:scaleType="fitCenter"
+                android:contentDescription="插入图片"
+                android:layout_marginEnd="6dp" />
+
+            <ImageButton
+                android:id="@+id/btnLayers"
+                android:layout_width="40dp"
+                android:layout_height="36dp"
+                android:background="@drawable/bg_button_secondary"
+                android:src="@drawable/ic_layers"
+                android:padding="7dp"
+                android:scaleType="fitCenter"
+                android:contentDescription="图层"
+                android:layout_marginEnd="6dp" />
+
+            <ImageButton
+                android:id="@+id/btnRecord"
+                android:layout_width="40dp"
+                android:layout_height="36dp"
+                android:background="@drawable/bg_button_secondary"
+                android:src="@drawable/ic_mic"
+                android:padding="7dp"
+                android:scaleType="fitCenter"
+                android:contentDescription="录音" />
+
+            <View
+                android:layout_width="1dp"
+                android:layout_height="24dp"
+                android:layout_marginHorizontal="10dp"
+                android:background="@color/border_hairline" />
             <Button
                 android:id="@+id/btnPageTemplate"
                 android:layout_width="wrap_content"
@@ -286,12 +357,51 @@
             android:layout_height="match_parent" />
 
         <!-- 套索选区操作条 -->
-        <LinearLayout
+        <HorizontalScrollView
             android:id="@+id/layoutSelectionBar"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_gravity="top|center_horizontal"
             android:layout_marginTop="12dp"
+            android:layout_marginHorizontal="12dp"
+            android:scrollbars="none"
+            android:background="@drawable/bg_selection_bar"
+            android:visibility="gone">
+
+            <LinearLayout
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:padding="6dp">
+
+                <TextView
+                    android:id="@+id/tvSelectionInfo"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:textSize="12sp"
+                    android:textColor="@color/text_secondary"
+                    android:paddingHorizontal="8dp" />
+
+                <Button android:id="@+id/btnSelCut" style="@style/SelectionAction" android:text="剪切" />
+                <Button android:id="@+id/btnSelCopy" style="@style/SelectionAction" android:text="拷贝" />
+                <Button android:id="@+id/btnSelDuplicate" style="@style/SelectionAction" android:text="复制一份" />
+                <Button android:id="@+id/btnSelDelete" style="@style/SelectionAction" android:text="删除" />
+                <Button android:id="@+id/btnSelColor" style="@style/SelectionAction" android:text="改色" />
+                <Button android:id="@+id/btnSelToText" style="@style/SelectionAction" android:text="转文字" />
+                <Button android:id="@+id/btnSelLayer" style="@style/SelectionAction" android:text="移到图层" />
+                <Button android:id="@+id/btnSelDone" style="@style/SelectionAction" android:text="完成" />
+            </LinearLayout>
+        </HorizontalScrollView>
+
+        <!-- 录音中提示条 -->
+        <LinearLayout
+            android:id="@+id/layoutRecordingBar"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="top|end"
+            android:layout_marginTop="12dp"
+            android:layout_marginEnd="12dp"
             android:orientation="horizontal"
             android:gravity="center_vertical"
             android:padding="6dp"
@@ -299,33 +409,31 @@
             android:visibility="gone">
 
             <TextView
-                android:id="@+id/tvSelectionInfo"
+                android:id="@+id/tvRecordingTime"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:textSize="12sp"
-                android:textColor="@color/text_secondary"
+                android:text="● 录音中 0:00"
+                android:textSize="13sp"
+                android:textStyle="bold"
+                android:textColor="#DC2626"
                 android:paddingHorizontal="8dp" />
 
-            <Button
-                android:id="@+id/btnSelDelete"
-                style="@style/SelectionAction"
-                android:text="删除" />
-
-            <Button
-                android:id="@+id/btnSelDuplicate"
-                style="@style/SelectionAction"
-                android:text="复制" />
-
-            <Button
-                android:id="@+id/btnSelColor"
-                style="@style/SelectionAction"
-                android:text="改色" />
-
-            <Button
-                android:id="@+id/btnSelDone"
-                style="@style/SelectionAction"
-                android:text="完成" />
+            <Button android:id="@+id/btnStopRecording" style="@style/SelectionAction" android:text="停止" />
         </LinearLayout>
+
+        <!-- 缩放比例，点按复位 -->
+        <TextView
+            android:id="@+id/tvZoom"
+            android:layout_width="wrap_content"
+            android:layout_height="32dp"
+            android:layout_gravity="bottom|start"
+            android:layout_margin="12dp"
+            android:gravity="center"
+            android:paddingHorizontal="12dp"
+            android:textSize="12sp"
+            android:textColor="@color/text_primary"
+            android:background="@drawable/bg_selection_bar"
+            android:visibility="gone" />
 
         <!-- 底部浮动识别结果面板 -->
         <LinearLayout

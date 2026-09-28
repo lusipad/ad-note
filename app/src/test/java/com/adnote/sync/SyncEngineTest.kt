@@ -224,4 +224,30 @@ tags: [Obsidian新标签1, 标签2]
         assertTrue(deletedPaths.any { it.endsWith("/_ink/${note.id}/page-003.svg") })
         assertEquals(1, repository.load(note.id)!!.sync.remotePageCount)
     }
+
+    @Test
+    fun testRecordingsUploadOnce() {
+        val puts = ArrayList<String>()
+        server.dispatcher = object : Dispatcher() {
+            override fun dispatch(request: RecordedRequest): MockResponse {
+                val path = java.net.URLDecoder.decode(request.path.orEmpty(), "UTF-8")
+                if (request.method == "PUT") puts += path
+                return when (request.method) {
+                    "GET" -> MockResponse().setResponseCode(404)
+                    else -> MockResponse().setResponseCode(201)
+                }
+            }
+        }
+        val created = repository.create("录音笔记", "收件箱", 800, 1200)
+        repository.assetFile(created.id, "audio/r1.m4a").apply { parentFile.mkdirs() }.writeBytes(ByteArray(16))
+        repository.save(created.copy(recordings = listOf(com.adnote.model.Recording(id = "r1", path = "audio/r1.m4a", createdAt = 0, durationMs = 1000))))
+
+        syncEngine.sync()
+        assertEquals(1, puts.count { it.endsWith("/audio/r1.m4a") })
+        assertEquals(listOf("r1"), repository.load(created.id)!!.sync.uploadedRecordings)
+
+        puts.clear()
+        syncEngine.sync(force = true)
+        assertEquals(0, puts.count { it.endsWith(".m4a") })
+    }
 }
