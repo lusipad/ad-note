@@ -26,6 +26,9 @@ interface PenInputListener {
 
     fun onAltStroke(points: List<InkPoint>) {}
 
+    /** 笔尖（或笔尾橡皮）接触屏幕，一次书写开始。用于屏蔽同时搭在屏幕上的手掌。 */
+    fun onPenDown() {}
+
     /** 笔尖悬停在屏幕上方 */
     fun onHover(x: Float, y: Float, eraser: Boolean) {}
 

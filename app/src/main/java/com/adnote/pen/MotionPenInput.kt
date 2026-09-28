@@ -82,6 +82,8 @@ class MotionPenInput(
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
                 if (x < 0 || x > view.width || y < 0 || y > view.height) return false
+                // 手指可以书写时，接触面积像手掌的触摸不画线，交给画布忽略掉
+                if (!isStylus && event.getTouchMajor(0) > PALM_DP * view.resources.displayMetrics.density) return false
                 if (!isStylus && gestureDelegate != null && interceptFinger(event)) {
                     delegating = true
                     gestureDelegate?.invoke(event)
@@ -97,6 +99,7 @@ class MotionPenInput(
                     buttonDown && buttonAction != StylusButtonAction.NONE -> Kind.ALT
                     else -> Kind.DRAW
                 }
+                if (isStylus) listener.onPenDown()
                 if (isStylus && Build.VERSION.SDK_INT >= 30) view.requestUnbufferedDispatch(event)
                 recordPrediction(event)
                 addPoint(event, x, y)
@@ -232,5 +235,10 @@ class MotionPenInput(
         listener = null
         predictor = null
         currentPoints.clear()
+    }
+
+    companion object {
+        /** 接触长轴超过这个尺寸（dp）视为手掌。 */
+        private const val PALM_DP = 28f
     }
 }

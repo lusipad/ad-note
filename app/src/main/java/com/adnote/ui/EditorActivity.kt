@@ -100,6 +100,9 @@ class EditorActivity : AppCompatActivity() {
 
     private val app get() = AdNoteApp.instance
     private val repo get() = AdNoteApp.instance.repository
+    private val isEink by lazy {
+        com.adnote.pen.DeviceDetector.detect().screenCategory == com.adnote.pen.ScreenCategory.EINK
+    }
 
     private var tools: ToolState = ToolState()
 
@@ -161,7 +164,9 @@ class EditorActivity : AppCompatActivity() {
             return
         }
         note = loaded
-        tools = app.toolState
+        // 每次进入编辑器都拿起笔：颜色、粗细等设置沿用上次，但工具不沿用
+        // （上次停在橡皮、套索或文字时，进来直接写字会没反应）
+        tools = app.toolState.copy(tool = Tool.PEN)
         assets = BitmapAssets(repo.getNoteDir(note.id))
         recorder = AudioRecorder(this)
 
@@ -328,7 +333,10 @@ class EditorActivity : AppCompatActivity() {
         penInput = input
 
         val listener = object : PenInputListener {
+            override fun onPenDown() = inkCanvas.setPenDown(true)
+
             override fun onDrawing(points: List<InkPoint>) {
+                if (points.isEmpty()) inkCanvas.setPenDown(false)
                 val pts = inkCanvas.toPage(points)
                 when (tools.tool) {
                     Tool.PEN, Tool.HIGHLIGHTER, Tool.SHAPE ->
@@ -340,6 +348,7 @@ class EditorActivity : AppCompatActivity() {
             }
 
             override fun onStroke(points: List<InkPoint>) {
+                inkCanvas.setPenDown(false)
                 inkCanvas.setTransientStroke(null)
                 if (points.isEmpty()) return
                 val pts = inkCanvas.toPage(points)
@@ -357,11 +366,18 @@ class EditorActivity : AppCompatActivity() {
             }
 
             // 笔尾橡皮 / 笔身按键：无论当前是什么工具，都按橡皮设置擦除
-            override fun onErasing(points: List<InkPoint>) = liveErase(inkCanvas.toPage(points))
+            override fun onErasing(points: List<InkPoint>) {
+                if (points.isEmpty()) inkCanvas.setPenDown(false)
+                liveErase(inkCanvas.toPage(points))
+            }
 
-            override fun onErase(points: List<InkPoint>) = finishErase(inkCanvas.toPage(points))
+            override fun onErase(points: List<InkPoint>) {
+                inkCanvas.setPenDown(false)
+                finishErase(inkCanvas.toPage(points))
+            }
 
             override fun onAltDrawing(points: List<InkPoint>) {
+                if (points.isEmpty()) inkCanvas.setPenDown(false)
                 val pts = inkCanvas.toPage(points)
                 when (app.stylusButtonAction) {
                     StylusButtonAction.LASSO -> inkCanvas.setLassoPath(pts)
@@ -372,6 +388,7 @@ class EditorActivity : AppCompatActivity() {
             }
 
             override fun onAltStroke(points: List<InkPoint>) {
+                inkCanvas.setPenDown(false)
                 inkCanvas.setTransientStroke(null)
                 val pts = inkCanvas.toPage(points)
                 when (app.stylusButtonAction) {
@@ -388,6 +405,9 @@ class EditorActivity : AppCompatActivity() {
             }
 
             override fun onHover(x: Float, y: Float, eraser: Boolean) {
+                inkCanvas.notePenNear()
+                // 墨水屏上悬停光标每移动一下就要刷新一次屏幕，只在普通彩屏上显示
+                if (isEink) return
                 val px = inkCanvas.toPageX(x); val py = inkCanvas.toPageY(y)
                 val r = if (eraser || tools.tool == Tool.ERASER) tools.eraserSize.radius else tools.activeWidth / 2f
                 inkCanvas.setHover(px, py, r)
@@ -442,13 +462,31 @@ class EditorActivity : AppCompatActivity() {
     private fun applyPenInputStyle() {
         val input = penInput ?: return
         val writing = tools.tool == Tool.PEN || tools.tool == Tool.HIGHLIGHTER || tools.tool == Tool.SHAPE
+        val eraser = tools.tool == Tool.ERASER
+        val scale = inkCanvas.viewport.scale
+        val page = note.pages.getOrNull(currentPageIndex)
+        // PDF 原文或自定义背景图上，纯色轨迹会盖住底图，不能用来预览擦除
+        val plainPaper = page != null && !note.isPdf && page.backgroundImage == null
         runCatching {
-            input.setPenStyle(tools.activePen)
-            input.setStrokeColor(StrokePainter.parseColor(tools.activeColor))
-            // 直绘层按屏幕像素画，需要乘上当前缩放
-            input.setStrokeWidth(tools.activeWidth * inkCanvas.viewport.scale)
-            // 普通书写与形状由硬件直绘；荧光笔（半透明）、橡皮、套索与文字由应用自己绘制
-            input.setRenderEnabled(tools.tool == Tool.PEN || tools.tool == Tool.SHAPE)
+            if (eraser && plainPaper) {
+                // 橡皮：让硬件直绘层画一条纸色的粗线，宽度等于橡皮直径，擦过的地方立刻「变白」，
+                // 抬笔后再按真实擦除结果刷新。否则文石固件会用当前笔型画一条细墨线，看起来像在写字
+                input.setPenStyle(PenType.MARKER)
+                input.setStrokeColor(StrokePainter.parseColor(PaperPresets.find(page!!.backgroundColor).hex))
+                input.setStrokeWidth(tools.eraserSize.radius * 2f * scale)
+            } else if (eraser) {
+                // 有底图的页面关闭直绘；万一固件不支持关闭，也只画一条不遮挡内容的细灰线
+                input.setPenStyle(PenType.PENCIL)
+                input.setStrokeColor(StrokePainter.parseColor(ERASER_GUIDE_COLOR))
+                input.setStrokeWidth(2f * scale)
+            } else {
+                input.setPenStyle(tools.activePen)
+                input.setStrokeColor(StrokePainter.parseColor(tools.activeColor))
+                // 直绘层按屏幕像素画，需要乘上当前缩放
+                input.setStrokeWidth(tools.activeWidth * scale)
+            }
+            // 普通书写、形状、纯色纸上的橡皮由硬件直绘；荧光笔（半透明）、套索与文字由应用自己绘制
+            input.setRenderEnabled(tools.tool == Tool.PEN || tools.tool == Tool.SHAPE || (eraser && plainPaper))
             input.setPredictionEnabled(writing)
         }
     }
@@ -977,6 +1015,8 @@ class EditorActivity : AppCompatActivity() {
         val cur = note.pages[currentPageIndex]
         withPenPaused { inkCanvas.updatePage(page().let { c -> cur.copy(strokes = c.strokes, texts = c.texts, images = c.images, layers = c.layers) }) }
         updatePageIndicator()
+        // 纸色、页面尺寸可能变了：橡皮直绘色与笔宽缩放随之更新
+        applyPenInputStyle()
     }
 
     private fun toggleRuler() {
@@ -1890,6 +1930,7 @@ class EditorActivity : AppCompatActivity() {
         private const val EXTRA_NOTE_ID = "extra_note_id"
         private const val SAVE_DELAY_MS = 1500L
         private val TEXT_SIZES = listOf(24f, 32f, 40f, 56f, 72f, 96f)
+        private const val ERASER_GUIDE_COLOR = "#9CA3AF"
 
         private const val MENU_INSERT = 1
         private const val MENU_DUPLICATE = 2
