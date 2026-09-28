@@ -7,6 +7,39 @@
     android:paddingTop="8dp"
     android:background="@color/bg_surface">
 
+    <!-- 缩略图与大纲目录视图切换 -->
+    <LinearLayout
+        android:id="@+id/layoutOverviewModes"
+        android:layout_width="match_parent"
+        android:layout_height="32dp"
+        android:orientation="horizontal"
+        android:background="@drawable/bg_view_mode_bar"
+        android:padding="2dp"
+        android:layout_marginBottom="8dp">
+
+        <Button
+            android:id="@+id/btnOverviewThumbs"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:text="🖼️ 缩略图视图"
+            android:textSize="12sp"
+            android:stateListAnimator="@null"
+            android:background="@drawable/bg_chip_selected"
+            android:textColor="@color/white" />
+
+        <Button
+            android:id="@+id/btnOverviewOutline"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:text="📑 目录大纲视图"
+            android:textSize="12sp"
+            android:stateListAnimator="@null"
+            android:background="@android:color/transparent"
+            android:textColor="@color/text_primary" />
+    </LinearLayout>
+
     <TextView
         android:id="@+id/tvOverviewHint"
         android:layout_width="wrap_content"

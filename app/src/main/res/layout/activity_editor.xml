@@ -126,8 +126,30 @@
             android:layout_marginEnd="6dp" />
 
         <ImageButton
-                android:padding="7dp"
-                android:scaleType="fitCenter"
+            android:padding="7dp"
+            android:scaleType="fitCenter"
+            android:id="@+id/btnZen"
+            android:layout_width="36dp"
+            android:layout_height="36dp"
+            android:background="@drawable/bg_button_secondary"
+            android:src="@drawable/ic_fullscreen"
+            android:contentDescription="全屏沉浸模式"
+            android:layout_marginEnd="6dp" />
+
+        <ImageButton
+            android:padding="7dp"
+            android:scaleType="fitCenter"
+            android:id="@+id/btnDockPosition"
+            android:layout_width="36dp"
+            android:layout_height="36dp"
+            android:background="@drawable/bg_button_secondary"
+            android:src="@drawable/ic_dock"
+            android:contentDescription="工具栏停靠位置"
+            android:layout_marginEnd="6dp" />
+
+        <ImageButton
+            android:padding="7dp"
+            android:scaleType="fitCenter"
             android:id="@+id/btnMore"
             android:layout_width="36dp"
             android:layout_height="36dp"
@@ -137,213 +159,339 @@
     </LinearLayout>
 
     <View
+        android:id="@+id/dividerTop"
         android:layout_width="match_parent"
         android:layout_height="1dp"
         android:background="@color/border_hairline" />
 
-    <!-- 工具栏：笔、荧光笔、橡皮、套索、快捷色、撤销重做、底纹 -->
-    <HorizontalScrollView
+    <!-- 编辑器主体：包含左侧停靠、中央画布区域与右侧停靠 -->
+    <LinearLayout
+        android:id="@+id/layoutEditorBody"
         android:layout_width="match_parent"
-        android:layout_height="50dp"
-        android:background="@color/bg_surface"
-        android:scrollbars="none">
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:orientation="horizontal">
 
-        <LinearLayout
+        <!-- 左侧垂直避手停靠栏 (Dock LEFT) -->
+        <ScrollView
+            android:id="@+id/dockLeft"
             android:layout_width="wrap_content"
             android:layout_height="match_parent"
-            android:orientation="horizontal"
-            android:gravity="center_vertical"
-            android:paddingHorizontal="12dp">
+            android:background="@color/bg_surface"
+            android:scrollbars="none"
+            android:visibility="gone" />
 
-            <ImageButton
-                android:id="@+id/btnToolPen"
-                android:layout_width="40dp"
-                android:layout_height="36dp"
-                android:background="@drawable/bg_button_secondary"
-                android:src="@drawable/ic_pen"
-                android:padding="7dp"
-                android:scaleType="fitCenter"
-                android:contentDescription="笔（再点一次打开设置）"
-                android:layout_marginEnd="6dp" />
+        <View
+            android:id="@+id/dividerDockLeft"
+            android:layout_width="1dp"
+            android:layout_height="match_parent"
+            android:background="@color/border_hairline"
+            android:visibility="gone" />
 
-            <ImageButton
-                android:id="@+id/btnToolHighlighter"
-                android:layout_width="40dp"
-                android:layout_height="36dp"
-                android:background="@drawable/bg_button_secondary"
-                android:src="@drawable/ic_highlighter"
-                android:padding="7dp"
-                android:scaleType="fitCenter"
-                android:contentDescription="荧光笔"
-                android:layout_marginEnd="6dp" />
+        <!-- 中央工作区：顶部停靠栏 + 画布 -->
+        <LinearLayout
+            android:id="@+id/layoutCenter"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:orientation="vertical">
 
-            <ImageButton
-                android:id="@+id/btnToolEraser"
-                android:layout_width="40dp"
-                android:layout_height="36dp"
-                android:background="@drawable/bg_button_secondary"
-                android:src="@drawable/ic_eraser"
-                android:padding="7dp"
-                android:scaleType="fitCenter"
-                android:contentDescription="橡皮擦"
-                android:layout_marginEnd="6dp" />
+            <!-- 顶部水平停靠容器 (Dock TOP) -->
+            <HorizontalScrollView
+                android:id="@+id/dockTop"
+                android:layout_width="match_parent"
+                android:layout_height="50dp"
+                android:background="@color/bg_surface"
+                android:scrollbars="none">
 
-            <ImageButton
-                android:id="@+id/btnToolLasso"
-                android:layout_width="40dp"
-                android:layout_height="36dp"
-                android:background="@drawable/bg_button_secondary"
-                android:src="@drawable/ic_lasso"
-                android:padding="7dp"
-                android:scaleType="fitCenter"
-                android:contentDescription="套索选择"
-                android:layout_marginEnd="6dp" />
+                <!-- 工具栏内容整体 (可停靠于顶部或左右侧) -->
+                <LinearLayout
+                    android:id="@+id/layoutToolBarContent"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:paddingHorizontal="10dp"
+                    android:paddingVertical="4dp">
 
-            <ImageButton
-                android:id="@+id/btnToolShape"
-                android:layout_width="40dp"
-                android:layout_height="36dp"
-                android:background="@drawable/bg_button_secondary"
-                android:src="@drawable/ic_shape"
-                android:padding="7dp"
-                android:scaleType="fitCenter"
-                android:contentDescription="形状（画完自动规整）"
-                android:layout_marginEnd="6dp" />
+                    <ImageButton
+                        android:id="@+id/btnToolPen"
+                        android:layout_width="40dp"
+                        android:layout_height="36dp"
+                        android:background="@drawable/bg_button_secondary"
+                        android:src="@drawable/ic_pen"
+                        android:padding="7dp"
+                        android:scaleType="fitCenter"
+                        android:contentDescription="笔（再点一次打开设置）"
+                        android:layout_marginEnd="6dp" />
 
-            <ImageButton
-                android:id="@+id/btnToolText"
-                android:layout_width="40dp"
-                android:layout_height="36dp"
-                android:background="@drawable/bg_button_secondary"
-                android:src="@drawable/ic_text"
-                android:padding="7dp"
-                android:scaleType="fitCenter"
-                android:contentDescription="文字框" />
+                    <ImageButton
+                        android:id="@+id/btnToolHighlighter"
+                        android:layout_width="40dp"
+                        android:layout_height="36dp"
+                        android:background="@drawable/bg_button_secondary"
+                        android:src="@drawable/ic_highlighter"
+                        android:padding="7dp"
+                        android:scaleType="fitCenter"
+                        android:contentDescription="荧光笔"
+                        android:layout_marginEnd="6dp" />
+
+                    <ImageButton
+                        android:id="@+id/btnToolEraser"
+                        android:layout_width="40dp"
+                        android:layout_height="36dp"
+                        android:background="@drawable/bg_button_secondary"
+                        android:src="@drawable/ic_eraser"
+                        android:padding="7dp"
+                        android:scaleType="fitCenter"
+                        android:contentDescription="橡皮擦"
+                        android:layout_marginEnd="6dp" />
+
+                    <ImageButton
+                        android:id="@+id/btnToolLasso"
+                        android:layout_width="40dp"
+                        android:layout_height="36dp"
+                        android:background="@drawable/bg_button_secondary"
+                        android:src="@drawable/ic_lasso"
+                        android:padding="7dp"
+                        android:scaleType="fitCenter"
+                        android:contentDescription="套索选择"
+                        android:layout_marginEnd="6dp" />
+
+                    <ImageButton
+                        android:id="@+id/btnToolShape"
+                        android:layout_width="40dp"
+                        android:layout_height="36dp"
+                        android:background="@drawable/bg_button_secondary"
+                        android:src="@drawable/ic_shape"
+                        android:padding="7dp"
+                        android:scaleType="fitCenter"
+                        android:contentDescription="形状（画完自动规整）"
+                        android:layout_marginEnd="6dp" />
+
+                    <ImageButton
+                        android:id="@+id/btnToolText"
+                        android:layout_width="40dp"
+                        android:layout_height="36dp"
+                        android:background="@drawable/bg_button_secondary"
+                        android:src="@drawable/ic_text"
+                        android:padding="7dp"
+                        android:scaleType="fitCenter"
+                        android:contentDescription="文字框" />
+
+                    <View
+                        android:id="@+id/dividerTool1"
+                        android:layout_width="1dp"
+                        android:layout_height="24dp"
+                        android:layout_marginHorizontal="8dp"
+                        android:background="@color/border_hairline" />
+
+                    <!-- 常用画笔快捷预设托盘 (3个预设位，支持一键切换与长按保存) -->
+                    <LinearLayout
+                        android:id="@+id/layoutPenPresets"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical">
+
+                        <FrameLayout
+                            android:id="@+id/slotPreset1"
+                            android:layout_width="38dp"
+                            android:layout_height="36dp"
+                            android:layout_marginEnd="4dp"
+                            android:background="@drawable/bg_button_secondary"
+                            android:clickable="true"
+                            android:focusable="true">
+                            <TextView
+                                android:id="@+id/tvPreset1Text"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:layout_gravity="center"
+                                android:textSize="12sp"
+                                android:textStyle="bold"
+                                android:textColor="@color/text_primary"
+                                android:text="1" />
+                            <View
+                                android:id="@+id/vPreset1Color"
+                                android:layout_width="8dp"
+                                android:layout_height="8dp"
+                                android:layout_gravity="bottom|end"
+                                android:layout_margin="3dp" />
+                        </FrameLayout>
+
+                        <FrameLayout
+                            android:id="@+id/slotPreset2"
+                            android:layout_width="38dp"
+                            android:layout_height="36dp"
+                            android:layout_marginEnd="4dp"
+                            android:background="@drawable/bg_button_secondary"
+                            android:clickable="true"
+                            android:focusable="true">
+                            <TextView
+                                android:id="@+id/tvPreset2Text"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:layout_gravity="center"
+                                android:textSize="12sp"
+                                android:textStyle="bold"
+                                android:textColor="@color/text_primary"
+                                android:text="2" />
+                            <View
+                                android:id="@+id/vPreset2Color"
+                                android:layout_width="8dp"
+                                android:layout_height="8dp"
+                                android:layout_gravity="bottom|end"
+                                android:layout_margin="3dp" />
+                        </FrameLayout>
+
+                        <FrameLayout
+                            android:id="@+id/slotPreset3"
+                            android:layout_width="38dp"
+                            android:layout_height="36dp"
+                            android:background="@drawable/bg_button_secondary"
+                            android:clickable="true"
+                            android:focusable="true">
+                            <TextView
+                                android:id="@+id/tvPreset3Text"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:layout_gravity="center"
+                                android:textSize="12sp"
+                                android:textStyle="bold"
+                                android:textColor="@color/text_primary"
+                                android:text="3" />
+                            <View
+                                android:id="@+id/vPreset3Color"
+                                android:layout_width="8dp"
+                                android:layout_height="8dp"
+                                android:layout_gravity="bottom|end"
+                                android:layout_margin="3dp" />
+                        </FrameLayout>
+                    </LinearLayout>
+
+                    <View
+                        android:id="@+id/dividerTool2"
+                        android:layout_width="1dp"
+                        android:layout_height="24dp"
+                        android:layout_marginHorizontal="8dp"
+                        android:background="@color/border_hairline" />
+
+                    <!-- 当前工具的快捷色板（橡皮/套索时隐藏） -->
+                    <LinearLayout
+                        android:id="@+id/layoutQuickColors"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical" />
+
+                    <TextView
+                        android:id="@+id/tvToolHint"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:textSize="12sp"
+                        android:textColor="@color/text_secondary"
+                        android:visibility="gone" />
+
+                    <View
+                        android:id="@+id/dividerTool3"
+                        android:layout_width="1dp"
+                        android:layout_height="24dp"
+                        android:layout_marginHorizontal="8dp"
+                        android:background="@color/border_hairline" />
+
+                    <ImageButton
+                        android:padding="7dp"
+                        android:scaleType="fitCenter"
+                        android:id="@+id/btnUndo"
+                        android:layout_width="40dp"
+                        android:layout_height="36dp"
+                        android:background="@drawable/bg_button_secondary"
+                        android:src="@drawable/ic_undo"
+                        android:contentDescription="撤销"
+                        android:layout_marginEnd="6dp" />
+
+                    <ImageButton
+                        android:padding="7dp"
+                        android:scaleType="fitCenter"
+                        android:id="@+id/btnRedo"
+                        android:layout_width="40dp"
+                        android:layout_height="36dp"
+                        android:background="@drawable/bg_button_secondary"
+                        android:src="@drawable/ic_redo"
+                        android:contentDescription="重做" />
+
+                    <View
+                        android:id="@+id/dividerTool4"
+                        android:layout_width="1dp"
+                        android:layout_height="24dp"
+                        android:layout_marginHorizontal="8dp"
+                        android:background="@color/border_hairline" />
+
+                    <ImageButton
+                        android:id="@+id/btnRuler"
+                        android:layout_width="40dp"
+                        android:layout_height="36dp"
+                        android:background="@drawable/bg_button_secondary"
+                        android:src="@drawable/ic_ruler"
+                        android:padding="7dp"
+                        android:scaleType="fitCenter"
+                        android:contentDescription="直尺"
+                        android:layout_marginEnd="6dp" />
+
+                    <ImageButton
+                        android:id="@+id/btnInsertImage"
+                        android:layout_width="40dp"
+                        android:layout_height="36dp"
+                        android:background="@drawable/bg_button_secondary"
+                        android:src="@drawable/ic_image"
+                        android:padding="7dp"
+                        android:scaleType="fitCenter"
+                        android:contentDescription="插入图片"
+                        android:layout_marginEnd="6dp" />
+
+                    <ImageButton
+                        android:id="@+id/btnLayers"
+                        android:layout_width="40dp"
+                        android:layout_height="36dp"
+                        android:background="@drawable/bg_button_secondary"
+                        android:src="@drawable/ic_layers"
+                        android:padding="7dp"
+                        android:scaleType="fitCenter"
+                        android:contentDescription="图层"
+                        android:layout_marginEnd="6dp" />
+
+                    <ImageButton
+                        android:id="@+id/btnRecord"
+                        android:layout_width="40dp"
+                        android:layout_height="36dp"
+                        android:background="@drawable/bg_button_secondary"
+                        android:src="@drawable/ic_mic"
+                        android:padding="7dp"
+                        android:scaleType="fitCenter"
+                        android:contentDescription="录音"
+                        android:layout_marginEnd="6dp" />
+
+                    <Button
+                        android:id="@+id/btnPageTemplate"
+                        android:layout_width="wrap_content"
+                        android:layout_height="36dp"
+                        android:text="底纹"
+                        android:textSize="12sp"
+                        android:textColor="@color/text_primary"
+                        android:background="@drawable/bg_button_secondary"
+                        android:drawableStart="@drawable/ic_paper_template"
+                        android:drawablePadding="4dp"
+                        android:paddingHorizontal="10dp"
+                        android:minWidth="0dp"
+                        android:stateListAnimator="@null" />
+                </LinearLayout>
+            </HorizontalScrollView>
 
             <View
-                android:layout_width="1dp"
-                android:layout_height="24dp"
-                android:layout_marginHorizontal="10dp"
+                android:id="@+id/dividerToolTop"
+                android:layout_width="match_parent"
+                android:layout_height="1dp"
                 android:background="@color/border_hairline" />
-
-            <!-- 当前工具的快捷色板（橡皮/套索时隐藏） -->
-            <LinearLayout
-                android:id="@+id/layoutQuickColors"
-                android:layout_width="wrap_content"
-                android:layout_height="match_parent"
-                android:orientation="horizontal"
-                android:gravity="center_vertical" />
-
-            <TextView
-                android:id="@+id/tvToolHint"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:textSize="12sp"
-                android:textColor="@color/text_secondary"
-                android:visibility="gone" />
-
-            <View
-                android:layout_width="1dp"
-                android:layout_height="24dp"
-                android:layout_marginHorizontal="10dp"
-                android:background="@color/border_hairline" />
-
-            <ImageButton
-                android:padding="7dp"
-                android:scaleType="fitCenter"
-                android:id="@+id/btnUndo"
-                android:layout_width="40dp"
-                android:layout_height="36dp"
-                android:background="@drawable/bg_button_secondary"
-                android:src="@drawable/ic_undo"
-                android:contentDescription="撤销"
-                android:layout_marginEnd="6dp" />
-
-            <ImageButton
-                android:padding="7dp"
-                android:scaleType="fitCenter"
-                android:id="@+id/btnRedo"
-                android:layout_width="40dp"
-                android:layout_height="36dp"
-                android:background="@drawable/bg_button_secondary"
-                android:src="@drawable/ic_redo"
-                android:contentDescription="重做" />
-
-            <View
-                android:layout_width="1dp"
-                android:layout_height="24dp"
-                android:layout_marginHorizontal="10dp"
-                android:background="@color/border_hairline" />
-
-
-            <ImageButton
-                android:id="@+id/btnRuler"
-                android:layout_width="40dp"
-                android:layout_height="36dp"
-                android:background="@drawable/bg_button_secondary"
-                android:src="@drawable/ic_ruler"
-                android:padding="7dp"
-                android:scaleType="fitCenter"
-                android:contentDescription="直尺"
-                android:layout_marginEnd="6dp" />
-
-            <ImageButton
-                android:id="@+id/btnInsertImage"
-                android:layout_width="40dp"
-                android:layout_height="36dp"
-                android:background="@drawable/bg_button_secondary"
-                android:src="@drawable/ic_image"
-                android:padding="7dp"
-                android:scaleType="fitCenter"
-                android:contentDescription="插入图片"
-                android:layout_marginEnd="6dp" />
-
-            <ImageButton
-                android:id="@+id/btnLayers"
-                android:layout_width="40dp"
-                android:layout_height="36dp"
-                android:background="@drawable/bg_button_secondary"
-                android:src="@drawable/ic_layers"
-                android:padding="7dp"
-                android:scaleType="fitCenter"
-                android:contentDescription="图层"
-                android:layout_marginEnd="6dp" />
-
-            <ImageButton
-                android:id="@+id/btnRecord"
-                android:layout_width="40dp"
-                android:layout_height="36dp"
-                android:background="@drawable/bg_button_secondary"
-                android:src="@drawable/ic_mic"
-                android:padding="7dp"
-                android:scaleType="fitCenter"
-                android:contentDescription="录音" />
-
-            <View
-                android:layout_width="1dp"
-                android:layout_height="24dp"
-                android:layout_marginHorizontal="10dp"
-                android:background="@color/border_hairline" />
-            <Button
-                android:id="@+id/btnPageTemplate"
-                android:layout_width="wrap_content"
-                android:layout_height="36dp"
-                android:text="底纹"
-                android:textSize="12sp"
-                android:textColor="@color/text_primary"
-                android:background="@drawable/bg_button_secondary"
-                android:drawableStart="@drawable/ic_paper_template"
-                android:drawablePadding="4dp"
-                android:paddingHorizontal="10dp"
-                android:minWidth="0dp"
-                android:stateListAnimator="@null" />
-        </LinearLayout>
-    </HorizontalScrollView>
-
-    <View
-        android:layout_width="match_parent"
-        android:layout_height="1dp"
-        android:background="@color/border_hairline" />
 
     <!-- 画布手写主区域 -->
     <FrameLayout
@@ -355,6 +503,36 @@
             android:id="@+id/inkCanvas"
             android:layout_width="match_parent"
             android:layout_height="match_parent" />
+
+        <!-- 悬浮退出全屏/禅模式按钮 -->
+        <LinearLayout
+            android:id="@+id/btnExitZen"
+            android:layout_width="wrap_content"
+            android:layout_height="36dp"
+            android:layout_gravity="top|start"
+            android:layout_margin="12dp"
+            android:background="@drawable/bg_selection_bar"
+            android:paddingHorizontal="12dp"
+            android:gravity="center"
+            android:orientation="horizontal"
+            android:visibility="gone"
+            android:clickable="true"
+            android:focusable="true">
+
+            <ImageView
+                android:layout_width="16dp"
+                android:layout_height="16dp"
+                android:src="@drawable/ic_fullscreen_exit" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="6dp"
+                android:text="退出禅模式"
+                android:textSize="13sp"
+                android:textStyle="bold"
+                android:textColor="@color/text_primary" />
+        </LinearLayout>
 
         <!-- 套索选区操作条 -->
         <HorizontalScrollView
@@ -484,4 +662,22 @@
                 android:ellipsize="end" />
         </LinearLayout>
     </FrameLayout>
+        </LinearLayout>
+
+        <View
+            android:id="@+id/dividerDockRight"
+            android:layout_width="1dp"
+            android:layout_height="match_parent"
+            android:background="@color/border_hairline"
+            android:visibility="gone" />
+
+        <!-- 右侧垂直避手停靠栏 (Dock RIGHT) -->
+        <ScrollView
+            android:id="@+id/dockRight"
+            android:layout_width="wrap_content"
+            android:layout_height="match_parent"
+            android:background="@color/bg_surface"
+            android:scrollbars="none"
+            android:visibility="gone" />
+    </LinearLayout>
 </LinearLayout>

@@ -64,6 +64,7 @@ class InkCanvasView @JvmOverloads constructor(
     }
 
     var listener: Listener? = null
+    var stylusOnly: Boolean = false
 
     private var page: Page? = null
     private var pdfBackground: Bitmap? = null
@@ -154,7 +155,7 @@ class InkCanvasView @JvmOverloads constructor(
                 c.save()
                 c.concat(matrixFor(viewport, pageMatrix))
                 c.clipRect(l, t, r, b)
-                renderer.drawPage(c, page, pdfBackground, hidden = selection)
+                renderer.drawPage(c, page, pdfBackground, hidden = selection, minLine = 1f / viewport.scale)
                 c.restore()
             }
             invalidate()
@@ -184,7 +185,7 @@ class InkCanvasView @JvmOverloads constructor(
         page = p.copy(strokes = p.strokes + stroke)
         val c = cacheCanvas
         val topLayer = p.layers.lastOrNull { it.visible }?.id
-        if (!cacheDirty && c != null && cacheViewport == viewport && stroke.layer == topLayer) {
+        if (!cacheDirty && c != null && cacheViewport == viewport && stroke.layer == topLayer && stroke.pen != com.adnote.model.PenType.HIGHLIGHTER) {
             c.save()
             c.concat(matrixFor(viewport, pageMatrix))
             c.clipRect(0f, 0f, p.width.toFloat(), p.height.toFloat())
@@ -355,7 +356,7 @@ class InkCanvasView @JvmOverloads constructor(
             c.save()
             c.concat(matrixFor(viewport, pageMatrix))
             c.clipRect(0f, 0f, p.width.toFloat(), p.height.toFloat())
-            renderer.drawPage(c, p, pdfBackground, hidden = selection)
+            renderer.drawPage(c, p, pdfBackground, hidden = selection, minLine = 1f / viewport.scale)
             c.restore()
         }
         cacheViewport = viewport
@@ -509,10 +510,14 @@ class InkCanvasView @JvmOverloads constructor(
     private fun penRecentlyActive(): Boolean =
         penDown || android.os.SystemClock.uptimeMillis() - lastPenTime < PALM_WINDOW_MS
 
-    /** 接触面积明显大于指尖，判定为手掌（部分设备不上报面积，此时只靠笔的状态判断）。 */
+    /** 接触面积明显大于指尖，或驱动直接上报为手掌。 */
     private fun isPalm(e: MotionEvent): Boolean {
         val limit = PALM_DP * density
-        return (0 until e.pointerCount).any { e.getTouchMajor(it) > limit }
+        return (0 until e.pointerCount).any { idx ->
+            e.getToolType(idx) == TOOL_TYPE_PALM ||
+                (e.getTouchMajor(idx) > 0f && e.getTouchMajor(idx) > limit) ||
+                e.getSize(idx) > 0.4f
+        }
     }
 
     /**
@@ -650,7 +655,7 @@ class InkCanvasView @JvmOverloads constructor(
             }
         } else if (mode == Mode.PAN) {
             val dx = e.x - downX; val dy = e.y - downY
-            if (!viewport.isZoomed && abs(dx) > SWIPE_MIN_DP * density && abs(dx) > abs(dy) * 1.5f) {
+            if (!stylusOnly && !viewport.isZoomed && abs(dx) > SWIPE_MIN_DP * density && abs(dx) > abs(dy) * 1.5f) {
                 listener?.onSwipe(if (dx < 0) 1 else -1)
             } else if (abs(dx) < tapSlop && abs(dy) < tapSlop && duration < TAP_MS) {
                 if (e.eventTime - lastTapTime < DOUBLE_TAP_MS && viewport.isZoomed) {
@@ -770,6 +775,7 @@ class InkCanvasView @JvmOverloads constructor(
     }
 
     companion object {
+        private const val TOOL_TYPE_PALM = 5
         private const val SWIPE_MIN_DP = 80f
         /** 接触长轴超过这个尺寸（dp）视为手掌。 */
         private const val PALM_DP = 28f

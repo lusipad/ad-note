@@ -54,7 +54,7 @@ object MarkdownComposer {
         parsed?.foreignFrontMatter?.forEach { sb.append(it).append('\n') }
         sb.append("---\n")
 
-        val before = parsed?.before ?: "\n"
+        val before = parsed?.before ?: (note.userMarkdown?.let { "$it\n\n" } ?: "\n")
         sb.append(before)
         if (!before.endsWith("\n")) sb.append('\n')
         if (!before.endsWith("\n\n")) sb.append('\n')

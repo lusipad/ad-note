@@ -28,6 +28,24 @@ object EraserSizes {
     fun clamp(radius: Float): Float = radius.coerceIn(MIN, MAX)
 }
 
+/** 常用画笔快捷预设槽位 */
+@Serializable
+data class PenPreset(
+    val tool: Tool = Tool.PEN,
+    val penType: PenType = PenType.FOUNTAIN,
+    val color: String = PenPresets.BLACK.hex,
+    val width: Float = PenPresets.WIDTH_FINE,
+    val name: String = "1",
+)
+
+/** 工具栏停靠位置模式（避手设计） */
+@Serializable
+enum class DockPosition(val displayName: String) {
+    TOP("顶部停靠"),
+    LEFT("左侧避手"),
+    RIGHT("右侧避手"),
+}
+
 /**
  * 编辑器工具栏的全部状态。每种工具独立记住自己的颜色与粗细，
  * 以 JSON 形式持久化，重新打开笔记时恢复上次用过的笔。
@@ -50,7 +68,73 @@ data class ToolState(
     val recentPenColors: List<String> = listOf(
         PenPresets.BLACK.hex, PenPresets.BLUE.hex, PenPresets.RED.hex, PenPresets.GREEN.hex,
     ),
+    /** 快捷画笔预设槽位（3个预设位，支持一键切换与长按保存）。 */
+    val presets: List<PenPreset> = listOf(
+        PenPreset(tool = Tool.PEN, penType = PenType.FOUNTAIN, color = PenPresets.BLACK.hex, width = PenPresets.WIDTH_FINE, name = "1"),
+        PenPreset(tool = Tool.PEN, penType = PenType.BALLPOINT, color = PenPresets.RED.hex, width = PenPresets.WIDTH_MEDIUM, name = "2"),
+        PenPreset(tool = Tool.HIGHLIGHTER, penType = PenType.HIGHLIGHTER, color = PenPresets.HIGHLIGHTERS.first().hex, width = PenPresets.HIGHLIGHTER_WIDTH, name = "3"),
+    ),
+    /** 工具栏停靠位置（顶部 / 左侧避手 / 右侧避手）。 */
+    val dockPosition: DockPosition = DockPosition.TOP,
 ) {
+    /** 匹配当前画笔设置对应的预设索引（若匹配则点亮槽位）。 */
+    fun activePresetIndex(): Int? {
+        val currentTool = tool
+        return presets.indexOfFirst { p ->
+            if (p.tool != currentTool) return@indexOfFirst false
+            if (currentTool == Tool.HIGHLIGHTER) {
+                p.color.equals(highlighterColor, ignoreCase = true) &&
+                    kotlin.math.abs(p.width - highlighterWidth) < 0.5f
+            } else {
+                p.penType == penType &&
+                    p.color.equals(penColor, ignoreCase = true) &&
+                    kotlin.math.abs(p.width - penWidth) < 0.5f
+            }
+        }.takeIf { it >= 0 }
+    }
+
+    /** 激活某个槽位的画笔设置。 */
+    fun applyPreset(preset: PenPreset): ToolState {
+        return if (preset.tool == Tool.HIGHLIGHTER) {
+            copy(
+                tool = Tool.HIGHLIGHTER,
+                highlighterColor = preset.color,
+                highlighterWidth = preset.width,
+            )
+        } else {
+            copy(
+                tool = Tool.PEN,
+                penType = preset.penType,
+                penColor = preset.color,
+                penWidth = preset.width,
+            )
+        }
+    }
+
+    /** 将当前画笔参数存储到指定槽位。 */
+    fun savePreset(index: Int): ToolState {
+        if (index !in presets.indices) return this
+        val current = if (tool == Tool.HIGHLIGHTER) {
+            PenPreset(
+                tool = Tool.HIGHLIGHTER,
+                penType = PenType.HIGHLIGHTER,
+                color = highlighterColor,
+                width = highlighterWidth,
+                name = "${index + 1}"
+            )
+        } else {
+            PenPreset(
+                tool = Tool.PEN,
+                penType = penType,
+                color = penColor,
+                width = penWidth,
+                name = "${index + 1}"
+            )
+        }
+        val list = presets.toMutableList()
+        list[index] = current
+        return copy(presets = list)
+    }
     /** 当前书写工具实际使用的笔型。 */
     val activePen: PenType get() = if (tool == Tool.HIGHLIGHTER) PenType.HIGHLIGHTER else penType
     val activeColor: String get() = if (tool == Tool.HIGHLIGHTER) highlighterColor else penColor

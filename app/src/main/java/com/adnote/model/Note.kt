@@ -83,6 +83,7 @@ data class SyncState(
     val uploadedRecordings: List<String> = emptyList(),
 )
 
+@OptIn(ExperimentalSerializationApi::class)
 @Serializable
 data class Note(
     val id: String = newId(),
@@ -107,16 +108,21 @@ data class Note(
      * 旧笔记第一次在编辑器打开时由 [LegacyCoords] 迁移。
      */
     val coordVersion: Int = 0,
+    /** 用户在 Obsidian 或本地附加的 Markdown 正文内容（在生成区之外）。 */
+    @EncodeDefault(EncodeDefault.Mode.NEVER) val userMarkdown: String? = null,
+    /** 上次打开/编辑时的页码（0-indexed）。关闭后重新打开将记忆并回到该页。 */
+    @EncodeDefault(EncodeDefault.Mode.NEVER) val lastPageIndex: Int = 0,
 ) {
     val isLocked: Boolean get() = !lockHash.isNullOrEmpty()
 
     val isDirty: Boolean get() = updatedAt > sync.lastSyncedAt
     val isPdf: Boolean get() = !pdfPath.isNullOrBlank()
 
-    /** 用于本地搜索的全文：标题 + 标签 + 识别文字。 */
+    /** 用于本地搜索的全文：标题 + 标签 + 识别文字 + Obsidian正文。 */
     fun searchableText(): String = buildString {
         append(title).append('\n')
         tags.forEach { append('#').append(it).append(' ') }
+        userMarkdown?.let { append('\n').append(it) }
         pages.forEach { p ->
             p.recognizedText?.let { append('\n').append(it) }
             p.texts.forEach { append('\n').append(it.text) }

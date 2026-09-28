@@ -161,4 +161,32 @@ class SvgExporterTest {
         // 读不到图片时跳过而不是输出坏链接
         assertTrue(!SvgExporter.export(page).contains("<image"))
     }
+
+    @Test
+    fun testHighlighterExportedUnderNormalStrokes() {
+        val normalStroke = Stroke(
+            id = "normal_pen",
+            points = listOf(InkPoint(10f, 10f), InkPoint(20f, 20f)),
+            color = "#000000",
+            pen = com.adnote.model.PenType.FOUNTAIN,
+        )
+        val highlighterStroke = Stroke(
+            id = "highlighter",
+            points = listOf(InkPoint(5f, 5f), InkPoint(25f, 25f)),
+            color = "#FACC15",
+            pen = com.adnote.model.PenType.HIGHLIGHTER,
+        )
+        // Note: normalStroke comes BEFORE highlighterStroke in page.strokes list
+        val page = Page(
+            width = 800,
+            height = 1200,
+            strokes = listOf(normalStroke, highlighterStroke)
+        )
+        val svg = SvgExporter.export(page)
+        val highlighterIndex = svg.indexOf("#facc15")
+        val normalIndex = svg.indexOf("#000000")
+        assertTrue("Highlighter should be found in svg", highlighterIndex != -1)
+        assertTrue("Normal stroke should be found in svg", normalIndex != -1)
+        assertTrue("Highlighter (#facc15) must be output before normal pen (#000000)", highlighterIndex < normalIndex)
+    }
 }

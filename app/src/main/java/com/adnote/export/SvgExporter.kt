@@ -44,7 +44,9 @@ object SvgExporter {
 
         for (content in page.layerContents()) {
             content.images.forEach { appendImage(it, assets) }
-            content.strokes.forEach { appendStroke(it) }
+            val (highlighters, normalStrokes) = content.strokes.partition { it.pen == com.adnote.model.PenType.HIGHLIGHTER }
+            highlighters.forEach { appendStroke(it) }
+            normalStrokes.forEach { appendStroke(it) }
             content.texts.forEach { appendText(it, page.width) }
         }
         append("</svg>\n")

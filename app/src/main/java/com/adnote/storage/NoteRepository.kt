@@ -58,15 +58,24 @@ class NoteRepository(private val root: File) {
 
     fun load(id: String): Note? {
         pending[id]?.let { return it }
-        val f = File(notesDir, "$id/note.json")
-        if (!f.exists()) return null
-        return try {
-            NoteJson.decodeFromString(Note.serializer(), f.readText())
-        } catch (e: Exception) {
-            // 单个笔记损坏不应拖垮整个列表
-            log.warning("跳过损坏的笔记 $id: ${e.message}")
-            null
+        val dir = File(notesDir, id)
+        val f = File(dir, "note.json")
+        val bak = File(dir, "note.json.bak")
+        val tmp = File(dir, "note.json.tmp")
+
+        fun tryDecode(file: File): Note? {
+            if (!file.exists()) return null
+            return try {
+                NoteJson.decodeFromString(Note.serializer(), file.readText())
+            } catch (e: Exception) {
+                log.warning("解析笔记文件 ${file.path} 失败: ${e.message}")
+                null
+            }
         }
+
+        return tryDecode(f)
+            ?: tryDecode(bak)?.also { log.info("从备份 note.json.bak 成功恢复笔记 $id") }
+            ?: tryDecode(tmp)?.also { log.info("从临时 note.json.tmp 成功恢复笔记 $id") }
     }
 
     /** 立即写入磁盘（在调用线程上）。 */
@@ -315,8 +324,13 @@ class NoteRepository(private val root: File) {
     }
 
     private fun atomicWrite(target: File, content: String) {
-        val tmp = File(target.parentFile, target.name + ".tmp")
+        val parent = target.parentFile ?: return
+        val tmp = File(parent, target.name + ".tmp")
+        val bak = File(parent, target.name + ".bak")
         tmp.writeText(content)
+        if (target.exists()) {
+            runCatching { target.copyTo(bak, overwrite = true) }
+        }
         if (!tmp.renameTo(target)) {
             // Windows 上 rename 不能覆盖已存在文件（单元测试环境）
             target.delete()

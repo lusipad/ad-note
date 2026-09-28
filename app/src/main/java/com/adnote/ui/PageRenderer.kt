@@ -71,7 +71,9 @@ class PageRenderer(private val assets: BitmapAssets?) {
     fun drawContent(canvas: Canvas, page: Page, hidden: Selection = Selection.EMPTY) {
         for (c in page.layerContents()) {
             c.images.forEach { if (it.id !in hidden.images) drawImage(canvas, it) }
-            c.strokes.forEach { if (it.id !in hidden.strokes) strokes.draw(canvas, it) }
+            val (highlighters, normalStrokes) = c.strokes.partition { it.pen == com.adnote.model.PenType.HIGHLIGHTER }
+            highlighters.forEach { if (it.id !in hidden.strokes) strokes.draw(canvas, it) }
+            normalStrokes.forEach { if (it.id !in hidden.strokes) strokes.draw(canvas, it) }
             c.texts.forEach { if (it.id !in hidden.texts) drawText(canvas, it, page.width) }
         }
     }

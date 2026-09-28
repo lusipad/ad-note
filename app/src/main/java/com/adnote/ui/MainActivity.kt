@@ -35,6 +35,8 @@ import java.util.Locale
 
 class MainActivity : AppCompatActivity() {
 
+    enum class ViewMode { ALL, FOLDERS, TAGS }
+
     private lateinit var btnNewNote: Button
     private lateinit var btnImportPdf: Button
     private lateinit var btnSync: Button
@@ -42,6 +44,10 @@ class MainActivity : AppCompatActivity() {
     private lateinit var btnSettings: Button
     private lateinit var etSearch: EditText
     private lateinit var layoutFilters: LinearLayout
+    private lateinit var scrollFilters: View
+    private lateinit var btnViewAll: Button
+    private lateinit var btnViewFolders: Button
+    private lateinit var btnViewTags: Button
     private lateinit var rvNotes: RecyclerView
     private lateinit var layoutEmpty: View
     private lateinit var btnClearSearch: View
@@ -54,10 +60,27 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private var currentViewMode = ViewMode.ALL
+    private val collapsedFolders = mutableSetOf<String>()
+    private val collapsedTags = mutableSetOf<String>()
+
     private val noteAdapter = NoteAdapter(
         onItemClick = { item -> openNote(item) },
         // 长按操作要改笔记本身（封面、锁、删除），这时才读取整篇笔记
-        onItemLongClick = { item -> AdNoteApp.instance.repository.load(item.id)?.let(::showNoteActions) }
+        onItemLongClick = { item -> AdNoteApp.instance.repository.load(item.id)?.let(::showNoteActions) },
+        onHeaderClick = { header ->
+            if (header.isFolder) {
+                if (collapsedFolders.contains(header.key)) collapsedFolders.remove(header.key)
+                else collapsedFolders.add(header.key)
+            } else {
+                if (collapsedTags.contains(header.key)) collapsedTags.remove(header.key)
+                else collapsedTags.add(header.key)
+            }
+            refreshNotes()
+        },
+        onHeaderAddClick = { folder ->
+            showNewNoteDialog(initialFolder = folder)
+        }
     )
 
     private var selectedFolder: String? = null
@@ -102,11 +125,11 @@ class MainActivity : AppCompatActivity() {
 
     private fun openNote(note: NoteSummary) {
         if (!note.isLocked) {
-            EditorActivity.start(this, note.id)
+            EditorActivity.start(this, note.id, note.lastPageIndex)
             return
         }
         askPin("输入 PIN 打开「${note.title}」") { pin ->
-            if (PinLock.verify(pin, note.lockHash)) EditorActivity.start(this, note.id)
+            if (PinLock.verify(pin, note.lockHash)) EditorActivity.start(this, note.id, note.lastPageIndex)
             else Toast.makeText(this, "PIN 不正确", Toast.LENGTH_SHORT).show()
         }
     }
@@ -247,6 +270,10 @@ class MainActivity : AppCompatActivity() {
         btnSettings = findViewById(R.id.btnSettings)
         etSearch = findViewById(R.id.etSearch)
         btnClearSearch = findViewById(R.id.btnClearSearch)
+        btnViewAll = findViewById(R.id.btnViewAll)
+        btnViewFolders = findViewById(R.id.btnViewFolders)
+        btnViewTags = findViewById(R.id.btnViewTags)
+        scrollFilters = findViewById(R.id.scrollFilters)
         layoutFilters = findViewById(R.id.layoutFilters)
         rvNotes = findViewById(R.id.rvNotes)
         layoutEmpty = findViewById(R.id.layoutEmpty)
@@ -276,6 +303,10 @@ class MainActivity : AppCompatActivity() {
             startActivity(Intent(this, SettingsActivity::class.java))
         }
 
+        btnViewAll.setOnClickListener { switchViewMode(ViewMode.ALL) }
+        btnViewFolders.setOnClickListener { switchViewMode(ViewMode.FOLDERS) }
+        btnViewTags.setOnClickListener { switchViewMode(ViewMode.TAGS) }
+
         btnClearSearch.setOnClickListener {
             etSearch.setText("")
         }
@@ -290,12 +321,104 @@ class MainActivity : AppCompatActivity() {
         })
     }
 
+    private fun switchViewMode(mode: ViewMode) {
+        if (currentViewMode == mode) return
+        currentViewMode = mode
+        updateViewModeButtons()
+        scrollFilters.visibility = if (mode == ViewMode.ALL) View.VISIBLE else View.GONE
+        refreshNotes()
+    }
+
+    private fun updateViewModeButtons() {
+        val buttons = listOf(
+            btnViewAll to ViewMode.ALL,
+            btnViewFolders to ViewMode.FOLDERS,
+            btnViewTags to ViewMode.TAGS,
+        )
+        for ((btn, mode) in buttons) {
+            if (currentViewMode == mode) {
+                btn.setBackgroundResource(R.drawable.bg_chip_selected)
+                btn.setTextColor(getColor(R.color.white))
+            } else {
+                btn.setBackgroundResource(android.R.color.transparent)
+                btn.setTextColor(getColor(R.color.text_primary))
+            }
+        }
+    }
+
     private fun refreshNotes() {
         val query = etSearch.text.toString().trim()
-        val list = NoteSummary.filter(allNotes, query = query, tag = selectedTag, folder = selectedFolder)
-        noteAdapter.submitList(list)
+        val filtered = NoteSummary.filter(
+            allNotes,
+            query = query,
+            tag = if (currentViewMode == ViewMode.ALL) selectedTag else null,
+            folder = if (currentViewMode == ViewMode.ALL) selectedFolder else null
+        )
+
+        val items = when (currentViewMode) {
+            ViewMode.ALL -> {
+                filtered.map { NoteListItem.Note(it) }
+            }
+            ViewMode.FOLDERS -> {
+                val folders = NoteSummary.foldersOf(filtered)
+                val list = mutableListOf<NoteListItem>()
+                for (folder in folders) {
+                    val inFolder = filtered.filter { it.folder == folder }
+                    if (inFolder.isEmpty() && query.isNotEmpty()) continue
+                    val isCollapsed = collapsedFolders.contains(folder)
+                    list.add(NoteListItem.Header(
+                        key = folder,
+                        title = "📁 $folder",
+                        count = inFolder.size,
+                        isFolder = true,
+                        isCollapsed = isCollapsed,
+                    ))
+                    if (!isCollapsed) {
+                        list.addAll(inFolder.map { NoteListItem.Note(it) })
+                    }
+                }
+                list
+            }
+            ViewMode.TAGS -> {
+                val tags = NoteSummary.tagsOf(filtered)
+                val list = mutableListOf<NoteListItem>()
+                for (tag in tags) {
+                    val withTag = filtered.filter { tag in it.tags }
+                    if (withTag.isEmpty() && query.isNotEmpty()) continue
+                    val isCollapsed = collapsedTags.contains(tag)
+                    list.add(NoteListItem.Header(
+                        key = tag,
+                        title = "🏷️ #$tag",
+                        count = withTag.size,
+                        isFolder = false,
+                        isCollapsed = isCollapsed,
+                    ))
+                    if (!isCollapsed) {
+                        list.addAll(withTag.map { NoteListItem.Note(it, contextTag = tag) })
+                    }
+                }
+                val untagged = filtered.filter { it.tags.isEmpty() }
+                if (untagged.isNotEmpty()) {
+                    val noTagKey = "__no_tag__"
+                    val isCollapsed = collapsedTags.contains(noTagKey)
+                    list.add(NoteListItem.Header(
+                        key = noTagKey,
+                        title = "🏷️ 未分类",
+                        count = untagged.size,
+                        isFolder = false,
+                        isCollapsed = isCollapsed,
+                    ))
+                    if (!isCollapsed) {
+                        list.addAll(untagged.map { NoteListItem.Note(it) })
+                    }
+                }
+                list
+            }
+        }
+
+        noteAdapter.submitList(items)
         // 第一次读完之前不显示「还没有笔记」
-        layoutEmpty.visibility = if (loaded && list.isEmpty()) View.VISIBLE else View.GONE
+        layoutEmpty.visibility = if (loaded && items.isEmpty()) View.VISIBLE else View.GONE
     }
 
     private fun refreshFilters() {
@@ -367,7 +490,7 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun showNewNoteDialog() {
+    private fun showNewNoteDialog(initialFolder: String? = null) {
         val dialogView = layoutInflater.inflate(R.layout.dialog_new_note, null)
         val etTitle = dialogView.findViewById<EditText>(R.id.etDialogTitle)
         val etFolder = dialogView.findViewById<EditText>(R.id.etDialogFolder)
@@ -378,7 +501,7 @@ class MainActivity : AppCompatActivity() {
 
         val defaultTitle = "笔记 " + SimpleDateFormat("MM-dd HH:mm", Locale.getDefault()).format(Date())
         etTitle.setText(defaultTitle)
-        etFolder.setText(selectedFolder ?: Note.DEFAULT_FOLDER)
+        etFolder.setText(initialFolder ?: selectedFolder ?: Note.DEFAULT_FOLDER)
         selectedTag?.let { etTags.setText(it) }
 
         val picker = TemplatePicker(
@@ -499,32 +622,83 @@ private val COVER_COLORS = listOf(
     "#B45309" to "琥珀", "#6D28D9" to "葡萄紫", "#9CA3AF" to "浅灰",
 )
 
+sealed class NoteListItem {
+    data class Header(
+        val key: String,
+        val title: String,
+        val count: Int,
+        val isFolder: Boolean,
+        val isCollapsed: Boolean,
+    ) : NoteListItem()
+
+    data class Note(
+        val summary: NoteSummary,
+        val contextTag: String? = null,
+    ) : NoteListItem()
+}
+
 class NoteAdapter(
     private val onItemClick: (NoteSummary) -> Unit,
     private val onItemLongClick: (NoteSummary) -> Unit,
-) : RecyclerView.Adapter<NoteAdapter.ViewHolder>() {
+    private val onHeaderClick: (NoteListItem.Header) -> Unit,
+    private val onHeaderAddClick: (String) -> Unit,
+) : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
 
-    private var items: List<NoteSummary> = emptyList()
+    companion object {
+        private const val TYPE_HEADER = 0
+        private const val TYPE_NOTE = 1
+    }
+
+    private var items: List<NoteListItem> = emptyList()
     private val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault())
 
-    fun submitList(list: List<NoteSummary>) {
+    fun submitList(list: List<NoteListItem>) {
         items = list
         notifyDataSetChanged()
     }
 
-    override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ViewHolder {
-        val view = LayoutInflater.from(parent.context).inflate(R.layout.item_note, parent, false)
-        return ViewHolder(view)
+    override fun getItemViewType(position: Int): Int = when (items[position]) {
+        is NoteListItem.Header -> TYPE_HEADER
+        is NoteListItem.Note -> TYPE_NOTE
     }
 
-    override fun onBindViewHolder(holder: ViewHolder, position: Int) {
-        val note = items[position]
-        holder.bind(note)
+    override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): RecyclerView.ViewHolder {
+        val inflater = LayoutInflater.from(parent.context)
+        return if (viewType == TYPE_HEADER) {
+            val view = inflater.inflate(R.layout.item_section_header, parent, false)
+            HeaderViewHolder(view)
+        } else {
+            val view = inflater.inflate(R.layout.item_note, parent, false)
+            NoteViewHolder(view)
+        }
+    }
+
+    override fun onBindViewHolder(holder: RecyclerView.ViewHolder, position: Int) {
+        when (val item = items[position]) {
+            is NoteListItem.Header -> (holder as HeaderViewHolder).bind(item)
+            is NoteListItem.Note -> (holder as NoteViewHolder).bind(item.summary)
+        }
     }
 
     override fun getItemCount(): Int = items.size
 
-    inner class ViewHolder(view: View) : RecyclerView.ViewHolder(view) {
+    inner class HeaderViewHolder(view: View) : RecyclerView.ViewHolder(view) {
+        private val tvTitle: TextView = view.findViewById(R.id.tvSectionTitle)
+        private val tvCount: TextView = view.findViewById(R.id.tvSectionCount)
+        private val btnAdd: Button = view.findViewById(R.id.btnSectionAdd)
+        private val tvToggle: TextView = view.findViewById(R.id.tvSectionToggle)
+
+        fun bind(header: NoteListItem.Header) {
+            tvTitle.text = header.title
+            tvCount.text = "${header.count} 篇"
+            tvToggle.text = if (header.isCollapsed) "▶" else "▼"
+            btnAdd.visibility = if (header.isFolder) View.VISIBLE else View.GONE
+            btnAdd.setOnClickListener { onHeaderAddClick(header.key) }
+            itemView.setOnClickListener { onHeaderClick(header) }
+        }
+    }
+
+    inner class NoteViewHolder(view: View) : RecyclerView.ViewHolder(view) {
         private val tvTitle: TextView = view.findViewById(R.id.tvTitle)
         private val tvPdfBadge: TextView = view.findViewById(R.id.tvPdfBadge)
         private val tvSyncBadge: TextView = view.findViewById(R.id.tvSyncBadge)
@@ -541,7 +715,12 @@ class NoteAdapter(
             if (cover != null) viewCover.setBackgroundColor(StrokePainter.parseColor(cover))
             tvPdfBadge.visibility = if (note.isPdf) View.VISIBLE else View.GONE
             tvFolder.text = note.folder
-            tvPageCount.text = "${note.pageCount} 页"
+            val pageProgress = if (note.pageCount > 1 && note.lastPageIndex > 0) {
+                "共 ${note.pageCount} 页 · 读至第 ${note.lastPageIndex + 1} 页"
+            } else {
+                "${note.pageCount} 页"
+            }
+            tvPageCount.text = pageProgress
             tvDate.text = dateFormat.format(Date(note.updatedAt))
 
             if (note.isDirty) {

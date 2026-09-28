@@ -12,6 +12,7 @@ import android.os.Looper
 import android.view.KeyEvent
 import android.view.View
 import android.view.WindowManager
+import android.view.ViewGroup
 import android.widget.Button
 import android.widget.CheckBox
 import android.widget.EditText
@@ -27,6 +28,7 @@ import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.GridLayoutManager
+import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.adnote.R
 import com.adnote.ink.Affine
@@ -39,6 +41,7 @@ import com.adnote.ink.SelectionOps
 import com.adnote.ink.ShapeRecognizer
 import com.adnote.ink.StrokeGeometry
 import com.adnote.ink.TextLayout
+import com.adnote.model.DockPosition
 import com.adnote.model.EraserMode
 import com.adnote.model.EraserSizes
 import com.adnote.model.ImageItem
@@ -46,6 +49,7 @@ import com.adnote.model.InkPoint
 import com.adnote.model.Layer
 import com.adnote.model.Note
 import com.adnote.model.Page
+import com.adnote.model.PenPreset
 import com.adnote.model.PageOps
 import com.adnote.model.PaperPresets
 import com.adnote.model.PenPresets
@@ -66,6 +70,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.util.Locale
 import kotlin.math.roundToInt
 
 class EditorActivity : AppCompatActivity() {
@@ -98,6 +103,33 @@ class EditorActivity : AppCompatActivity() {
     private lateinit var tvZoom: TextView
     private lateinit var layoutRecognized: LinearLayout
     private lateinit var tvRecognizedResult: TextView
+
+    private lateinit var toolbar: View
+    private lateinit var dividerTop: View
+    private lateinit var dockTop: ViewGroup
+    private lateinit var dockLeft: ViewGroup
+    private lateinit var dockRight: ViewGroup
+    private lateinit var dividerDockLeft: View
+    private lateinit var dividerDockRight: View
+    private lateinit var dividerToolTop: View
+    private lateinit var layoutToolBarContent: LinearLayout
+    private lateinit var layoutPenPresets: LinearLayout
+
+    private lateinit var slotPreset1: View
+    private lateinit var tvPreset1Text: TextView
+    private lateinit var vPreset1Color: View
+    private lateinit var slotPreset2: View
+    private lateinit var tvPreset2Text: TextView
+    private lateinit var vPreset2Color: View
+    private lateinit var slotPreset3: View
+    private lateinit var tvPreset3Text: TextView
+    private lateinit var vPreset3Color: View
+
+    private lateinit var btnZen: ImageButton
+    private lateinit var btnDockPosition: ImageButton
+    private lateinit var btnExitZen: View
+
+    private var isZenMode: Boolean = false
 
     private val app get() = AdNoteApp.instance
     private val repo get() = AdNoteApp.instance.repository
@@ -192,11 +224,39 @@ class EditorActivity : AppCompatActivity() {
         initViews()
         setupListeners()
         applyTools()
+        applyDockPosition(tools.dockPosition)
     }
 
     // region 初始化
 
     private fun initViews() {
+        toolbar = findViewById(R.id.toolbar)
+        dividerTop = findViewById(R.id.dividerTop)
+        dockTop = findViewById(R.id.dockTop)
+        dockLeft = findViewById(R.id.dockLeft)
+        dockRight = findViewById(R.id.dockRight)
+        dividerDockLeft = findViewById(R.id.dividerDockLeft)
+        dividerDockRight = findViewById(R.id.dividerDockRight)
+        dividerToolTop = findViewById(R.id.dividerToolTop)
+        layoutToolBarContent = findViewById(R.id.layoutToolBarContent)
+        layoutPenPresets = findViewById(R.id.layoutPenPresets)
+
+        slotPreset1 = findViewById(R.id.slotPreset1)
+        tvPreset1Text = findViewById(R.id.tvPreset1Text)
+        vPreset1Color = findViewById(R.id.vPreset1Color)
+
+        slotPreset2 = findViewById(R.id.slotPreset2)
+        tvPreset2Text = findViewById(R.id.tvPreset2Text)
+        vPreset2Color = findViewById(R.id.vPreset2Color)
+
+        slotPreset3 = findViewById(R.id.slotPreset3)
+        tvPreset3Text = findViewById(R.id.tvPreset3Text)
+        vPreset3Color = findViewById(R.id.vPreset3Color)
+
+        btnZen = findViewById(R.id.btnZen)
+        btnDockPosition = findViewById(R.id.btnDockPosition)
+        btnExitZen = findViewById(R.id.btnExitZen)
+
         tvNoteTitle = findViewById(R.id.tvNoteTitle)
         btnPrevPage = findViewById(R.id.btnPrevPage)
         tvPageIndicator = findViewById(R.id.tvPageIndicator)
@@ -251,6 +311,17 @@ class EditorActivity : AppCompatActivity() {
             finish()
         }
         tvNoteTitle.setOnClickListener { showEditMetadataDialog() }
+
+        btnZen.setOnClickListener { enterZenMode() }
+        btnExitZen.setOnClickListener { exitZenMode() }
+        btnDockPosition.setOnClickListener { showDockPositionDialog() }
+
+        slotPreset1.setOnClickListener { selectPreset(0) }
+        slotPreset1.setOnLongClickListener { saveCurrentToPreset(0); true }
+        slotPreset2.setOnClickListener { selectPreset(1) }
+        slotPreset2.setOnLongClickListener { saveCurrentToPreset(1); true }
+        slotPreset3.setOnClickListener { selectPreset(2) }
+        slotPreset3.setOnLongClickListener { saveCurrentToPreset(2); true }
 
         btnPrevPage.setOnClickListener { prevPage() }
         btnNextPage.setOnClickListener { nextPage(appendAtEnd = true) }
@@ -313,7 +384,7 @@ class EditorActivity : AppCompatActivity() {
 
             override fun onViewportChanged(viewport: Viewport) {
                 applyPenInputStyle()
-                // 其中会更新书写区域：缩放、平移后页面在屏幕上的位置变了
+                updateExcludeRects()
                 updateZoomLabel()
             }
 
@@ -323,7 +394,9 @@ class EditorActivity : AppCompatActivity() {
         // 画布完成布局后再加载页面、初始化画笔通道（需要知道画布尺寸与屏幕区域）
         inkCanvas.post {
             migrateLegacyCoords()
-            loadPage(0)
+            val startPage = intent.getIntExtra(EXTRA_PAGE_INDEX, -1)
+                .takeIf { it >= 0 } ?: note.lastPageIndex.coerceIn(0, (note.pages.size - 1).coerceAtLeast(0))
+            loadPage(startPage)
             setupPenInput()
         }
     }
@@ -450,6 +523,7 @@ class EditorActivity : AppCompatActivity() {
             override fun onHoverExit() = inkCanvas.clearHover()
         }
 
+        inkCanvas.stylusOnly = app.stylusOnly
         input.attach(inkCanvas, rect, listener)
         input.setGestureDelegate({ inkCanvas.handleGesture(it) }, { inkCanvas.wantsFinger(it) })
         input.setStylusButtonAction(app.stylusButtonAction)
@@ -485,6 +559,7 @@ class EditorActivity : AppCompatActivity() {
         toolButtons.forEach { (tool, btn) ->
             btn.setBackgroundResource(if (tool == tools.tool) R.drawable.bg_tool_selected else R.drawable.bg_button_secondary)
         }
+        refreshPresets()
         refreshQuickColors()
         if (tools.tool != Tool.ERASER) inkCanvas.hideEraserCursor()
         if (tools.tool != Tool.LASSO) {
@@ -571,15 +646,20 @@ class EditorActivity : AppCompatActivity() {
                 if (app.clipboard != null) "圈选后可拖动/缩放/旋转 · 长按套索粘贴" else "圈选后可拖动、缩放、旋转、删除、复制"
             )
         }
-        // 当前笔型与粗细显示在色板后面，点一下打开设置（和再点一次工具按钮一样）
-        val width = String.format("%.1f", tools.activeWidth)
-        if (tools.tool == Tool.PEN) showHint("${tools.penType.displayName} · 粗细 $width  ▾")
-        if (tools.tool == Tool.HIGHLIGHTER) showHint("粗细 $width  ▾")
-        if (tools.tool == Tool.SHAPE) showHint("${tools.penType.displayName} · 粗细 $width · 画完自动规整成直线、矩形、圆  ▾")
-        if (tools.tool == Tool.TEXT) showHint("点按页面添加文字")
+        val isVertical = tools.dockPosition == DockPosition.LEFT || tools.dockPosition == DockPosition.RIGHT
+        if (!isVertical) {
+            // 当前笔型与粗细显示在色板后面，点一下打开设置（和再点一次工具按钮一样）
+            val width = String.format(Locale.US, "%.1f", tools.activeWidth)
+            if (tools.tool == Tool.PEN) showHint("${tools.penType.displayName} · 粗细 $width  ▾")
+            if (tools.tool == Tool.HIGHLIGHTER) showHint("粗细 $width  ▾")
+            if (tools.tool == Tool.SHAPE) showHint("${tools.penType.displayName} · 粗细 $width · 画完自动规整成直线、矩形、圆  ▾")
+            if (tools.tool == Tool.TEXT) showHint("点按页面添加文字")
+        }
     }
 
     private fun showHint(text: String) {
+        val isVertical = tools.dockPosition == DockPosition.LEFT || tools.dockPosition == DockPosition.RIGHT
+        if (isVertical) return
         tvToolHint.visibility = View.VISIBLE
         tvToolHint.text = text
     }
@@ -592,6 +672,194 @@ class EditorActivity : AppCompatActivity() {
     private fun highlighterStroke(points: List<InkPoint>): Stroke =
         Stroke(points = points, width = tools.highlighterWidth, color = tools.highlighterColor,
             pen = PenType.HIGHLIGHTER, layer = activeLayer())
+
+    private fun refreshPresets() {
+        val activeIdx = tools.activePresetIndex()
+        val presets = tools.presets
+        if (presets.size >= 3) {
+            updatePresetSlot(slotPreset1, tvPreset1Text, vPreset1Color, presets[0], activeIdx == 0)
+            updatePresetSlot(slotPreset2, tvPreset2Text, vPreset2Color, presets[1], activeIdx == 1)
+            updatePresetSlot(slotPreset3, tvPreset3Text, vPreset3Color, presets[2], activeIdx == 2)
+        }
+    }
+
+    private fun updatePresetSlot(slot: View, tv: TextView, dot: View, preset: PenPreset, isActive: Boolean) {
+        slot.setBackgroundResource(if (isActive) R.drawable.bg_tool_selected else R.drawable.bg_button_secondary)
+        tv.text = when {
+            preset.tool == Tool.HIGHLIGHTER -> "荧"
+            preset.width <= 2.2f -> "0.5"
+            preset.width <= 4.0f -> "0.8"
+            else -> String.format(Locale.US, "%.1f", preset.width)
+        }
+        val colorInt = StrokePainter.parseColor(preset.color)
+        val density = resources.displayMetrics.density
+        val dotDrawable = android.graphics.drawable.GradientDrawable().apply {
+            shape = android.graphics.drawable.GradientDrawable.OVAL
+            setColor(colorInt)
+            setStroke((1 * density).toInt(), android.graphics.Color.parseColor("#80888888"))
+        }
+        dot.background = dotDrawable
+        val tip = if (preset.tool == Tool.HIGHLIGHTER) {
+            "快捷荧光笔 · 宽 ${preset.width} (长按将当前笔存入)"
+        } else {
+            "快捷画笔 · ${preset.penType.displayName} · 宽 ${preset.width} (长按将当前笔存入)"
+        }
+        slot.contentDescription = tip
+    }
+
+    private fun selectPreset(index: Int) {
+        if (index !in tools.presets.indices) return
+        tools = tools.applyPreset(tools.presets[index])
+        applyTools()
+        val p = tools.presets[index]
+        val name = if (p.tool == Tool.HIGHLIGHTER) "荧光笔" else "${p.penType.displayName} (${p.width})"
+        toast("已切换到预设 ${index + 1}：$name")
+    }
+
+    private fun saveCurrentToPreset(index: Int) {
+        if (index !in tools.presets.indices) return
+        tools = tools.savePreset(index)
+        applyTools()
+        val p = tools.presets[index]
+        val name = if (p.tool == Tool.HIGHLIGHTER) "荧光笔" else "${p.penType.displayName} (${p.width})"
+        toast("已将当前笔保存至快捷槽位 ${index + 1}：$name")
+    }
+
+    private fun applyDockPosition(dock: DockPosition) {
+        if (isZenMode) return
+        val isVertical = dock == DockPosition.LEFT || dock == DockPosition.RIGHT
+        (layoutToolBarContent.parent as? ViewGroup)?.removeView(layoutToolBarContent)
+
+        updateToolBarOrientation(isVertical)
+
+        when (dock) {
+            DockPosition.TOP -> {
+                dockTop.addView(layoutToolBarContent)
+                dockTop.visibility = View.VISIBLE
+                dividerToolTop.visibility = View.VISIBLE
+                dockLeft.visibility = View.GONE
+                dividerDockLeft.visibility = View.GONE
+                dockRight.visibility = View.GONE
+                dividerDockRight.visibility = View.GONE
+            }
+            DockPosition.LEFT -> {
+                dockLeft.addView(layoutToolBarContent)
+                dockLeft.visibility = View.VISIBLE
+                dividerDockLeft.visibility = View.VISIBLE
+                dockTop.visibility = View.GONE
+                dividerToolTop.visibility = View.GONE
+                dockRight.visibility = View.GONE
+                dividerDockRight.visibility = View.GONE
+            }
+            DockPosition.RIGHT -> {
+                dockRight.addView(layoutToolBarContent)
+                dockRight.visibility = View.VISIBLE
+                dividerDockRight.visibility = View.VISIBLE
+                dockTop.visibility = View.GONE
+                dividerToolTop.visibility = View.GONE
+                dockLeft.visibility = View.GONE
+                dividerDockLeft.visibility = View.GONE
+            }
+        }
+        inkCanvas.post { updateExcludeRects() }
+    }
+
+    private fun updateToolBarOrientation(isVertical: Boolean) {
+        val density = resources.displayMetrics.density
+        layoutToolBarContent.orientation = if (isVertical) LinearLayout.VERTICAL else LinearLayout.HORIZONTAL
+        layoutPenPresets.orientation = if (isVertical) LinearLayout.VERTICAL else LinearLayout.HORIZONTAL
+        layoutQuickColors.orientation = if (isVertical) LinearLayout.VERTICAL else LinearLayout.HORIZONTAL
+
+        val dp24 = (24 * density).toInt()
+        val dp1 = (1 * density).toInt().coerceAtLeast(1)
+        val dp6 = (6 * density).toInt()
+        val dp8 = (8 * density).toInt()
+
+        val dividers = listOf<View?>(
+            findViewById(R.id.dividerTool1),
+            findViewById(R.id.dividerTool2),
+            findViewById(R.id.dividerTool3),
+            findViewById(R.id.dividerTool4),
+        )
+        dividers.forEach { v ->
+            v?.layoutParams = if (isVertical) {
+                LinearLayout.LayoutParams(dp24, dp1).apply { setMargins(0, dp8, 0, dp8) }
+            } else {
+                LinearLayout.LayoutParams(dp1, dp24).apply { setMargins(dp8, 0, dp8, 0) }
+            }
+        }
+
+        val toolBtnParams = if (isVertical) {
+            LinearLayout.LayoutParams((40 * density).toInt(), (36 * density).toInt()).apply {
+                setMargins(0, 0, 0, dp6)
+            }
+        } else {
+            LinearLayout.LayoutParams((40 * density).toInt(), (36 * density).toInt()).apply {
+                setMargins(0, 0, dp6, 0)
+            }
+        }
+        toolButtons.values.forEach { it.layoutParams = toolBtnParams }
+
+        val slotMargin = (4 * density).toInt()
+        val slotParamsWithMargin = if (isVertical) {
+            LinearLayout.LayoutParams((38 * density).toInt(), (36 * density).toInt()).apply {
+                setMargins(0, 0, 0, slotMargin)
+            }
+        } else {
+            LinearLayout.LayoutParams((38 * density).toInt(), (36 * density).toInt()).apply {
+                setMargins(0, 0, slotMargin, 0)
+            }
+        }
+        val slotParamsLast = LinearLayout.LayoutParams((38 * density).toInt(), (36 * density).toInt())
+        slotPreset1.layoutParams = slotParamsWithMargin
+        slotPreset2.layoutParams = slotParamsWithMargin
+        slotPreset3.layoutParams = slotParamsLast
+    }
+
+    private fun showDockPositionDialog() {
+        val options = DockPosition.entries.map { it.displayName }.toTypedArray()
+        val currentIdx = DockPosition.entries.indexOf(tools.dockPosition)
+        AlertDialog.Builder(this)
+            .setTitle("工具栏停靠位置（避手模式）")
+            .setSingleChoiceItems(options, currentIdx) { dialog, which ->
+                val chosen = DockPosition.entries[which]
+                dialog.dismiss()
+                if (chosen != tools.dockPosition) {
+                    tools = tools.copy(dockPosition = chosen)
+                    applyDockPosition(chosen)
+                    app.saveToolState(tools)
+                    toast("已切换为：${chosen.displayName}")
+                }
+            }
+            .setNegativeButton("取消", null)
+            .show()
+    }
+
+    private fun enterZenMode() {
+        if (isZenMode) return
+        isZenMode = true
+        toolbar.visibility = View.GONE
+        dividerTop.visibility = View.GONE
+        dockTop.visibility = View.GONE
+        dividerToolTop.visibility = View.GONE
+        dockLeft.visibility = View.GONE
+        dividerDockLeft.visibility = View.GONE
+        dockRight.visibility = View.GONE
+        dividerDockRight.visibility = View.GONE
+        btnExitZen.visibility = View.VISIBLE
+        inkCanvas.post { updateExcludeRects() }
+        toast("已进入全屏禅模式，点按左上角按钮退出")
+    }
+
+    private fun exitZenMode() {
+        if (!isZenMode) return
+        isZenMode = false
+        toolbar.visibility = View.VISIBLE
+        dividerTop.visibility = View.VISIBLE
+        btnExitZen.visibility = View.GONE
+        applyDockPosition(tools.dockPosition)
+        inkCanvas.post { updateExcludeRects() }
+    }
 
     // endregion
 
@@ -690,27 +958,61 @@ class EditorActivity : AppCompatActivity() {
         val layer = activeLayer()
         val editable = p.strokes.filter { it.layer == layer }
         val radius = tools.eraserRadius
+        val pathBounds = eraserPathBounds(path, radius)
         val next: List<Stroke>
         val changed: List<Stroke>
         when (tools.eraserMode) {
             EraserMode.PARTIAL -> {
                 val erased = Eraser.erasePartial(editable, path, radius)
-                if (erased === editable) return
+                if (erased === editable) {
+                    // 即使没有笔画被切除，也重绘橡皮划过的区域，消除硬件直绘覆盖的白迹，恢复背景格线
+                    if (pathBounds != null) inkCanvas.updatePage(p, dirty = pathBounds)
+                    return
+                }
                 next = p.strokes.filter { it.layer != layer } + erased
-                // 被擦到的原笔画（整条删掉或拆成几段），擦除后的内容都在它们的范围内
                 val kept = java.util.Collections.newSetFromMap(java.util.IdentityHashMap<Stroke, Boolean>())
                 kept.addAll(erased)
                 changed = editable.filter { it !in kept }
             }
             EraserMode.STROKE -> {
                 val hit = Eraser.hitStrokes(editable, path, radius)
-                if (hit.isEmpty()) return
+                if (hit.isEmpty()) {
+                    // 同样刷新橡皮划过的区域，恢复被硬件擦除色覆盖的底纹
+                    if (pathBounds != null) inkCanvas.updatePage(p, dirty = pathBounds)
+                    return
+                }
                 next = p.strokes.filterNot { it.id in hit }
                 changed = editable.filter { it.id in hit }
             }
         }
-        // 只重画变化的那一块，笔迹多的页面实时擦除也跟得上
-        inkCanvas.updatePage(p.copy(strokes = next), dirty = StrokeGeometry.bounds(changed))
+        // 重绘范围同时包含被删笔画与橡皮划过的路径，避免留下任何白条痕迹
+        val strokeBounds = StrokeGeometry.bounds(changed)
+        val dirty = unionBounds(strokeBounds, pathBounds)
+        inkCanvas.updatePage(p.copy(strokes = next), dirty = dirty)
+    }
+
+    private fun eraserPathBounds(path: List<InkPoint>, radius: Float): FloatArray? {
+        if (path.isEmpty()) return null
+        var minX = Float.MAX_VALUE; var minY = Float.MAX_VALUE
+        var maxX = -Float.MAX_VALUE; var maxY = -Float.MAX_VALUE
+        for (pt in path) {
+            if (pt.x < minX) minX = pt.x
+            if (pt.x > maxX) maxX = pt.x
+            if (pt.y < minY) minY = pt.y
+            if (pt.y > maxY) maxY = pt.y
+        }
+        return floatArrayOf(minX - radius, minY - radius, maxX + radius, maxY + radius)
+    }
+
+    private fun unionBounds(a: FloatArray?, b: FloatArray?): FloatArray? {
+        if (a == null) return b
+        if (b == null) return a
+        return floatArrayOf(
+            minOf(a[0], b[0]),
+            minOf(a[1], b[1]),
+            maxOf(a[2], b[2]),
+            maxOf(a[3], b[3]),
+        )
     }
 
     /** 实时擦除：只处理新增的轨迹段，同时显示橡皮光标。 */
@@ -1092,7 +1394,10 @@ class EditorActivity : AppCompatActivity() {
         )
         saveNow()
         val cur = note.pages[currentPageIndex]
-        withPenPaused { inkCanvas.updatePage(page().let { c -> cur.copy(strokes = c.strokes, texts = c.texts, images = c.images, layers = c.layers) }) }
+        withPenPaused {
+            inkCanvas.updatePage(page().let { c -> cur.copy(strokes = c.strokes, texts = c.texts, images = c.images, layers = c.layers) })
+            EinkRefresher.fullRefresh(inkCanvas)
+        }
         updatePageIndicator()
         // 纸色、页面尺寸可能变了：橡皮直绘色、笔宽缩放与书写区域随之更新
         applyPenInputStyle()
@@ -1342,6 +1647,10 @@ class EditorActivity : AppCompatActivity() {
         if (index != currentPageIndex) autoRecognize(currentPageIndex)
         exitSelection()
         currentPageIndex = index
+        if (note.lastPageIndex != index) {
+            note = note.copy(lastPageIndex = index)
+            saveNow()
+        }
         // 空白页按画布比例调整高度，整页铺满、四周没有写不进去的灰边。
         // 本次打开后擦空的页面还能撤销回原来的内容，尺寸保持不变
         val canUndo = histories[note.pages[index].id]?.canUndo == true
@@ -1385,6 +1694,8 @@ class EditorActivity : AppCompatActivity() {
     private fun goToPage(index: Int) {
         if (index == currentPageIndex || index !in note.pages.indices) return
         withPenPaused { loadPage(index) }
+        note = note.copy(lastPageIndex = index)
+        saveNow()
         inkCanvas.post { EinkRefresher.onPageTurned(inkCanvas, app.fullRefreshEvery) }
     }
 
@@ -1487,6 +1798,8 @@ class EditorActivity : AppCompatActivity() {
         add(MENU_RECORDINGS, "录音" + if (note.recordings.isNotEmpty()) "（${note.recordings.size}）" else "")
         add(MENU_SHARE_PDF, "分享整本 PDF")
         add(MENU_SHARE_PNG, "分享本页图片")
+        add(MENU_ZEN, "全屏沉浸模式")
+        add(MENU_DOCK, "工具栏停靠位置（当前：${tools.dockPosition.displayName}）")
         if (canEdit) {
             add(MENU_INSERT, "在后面插入新页")
             add(MENU_DUPLICATE, "复制当前页")
@@ -1496,12 +1809,17 @@ class EditorActivity : AppCompatActivity() {
         }
         add(MENU_CLEAR, "清空本页")
         add(MENU_OVERVIEW, "页面概览")
+        val hasUserMd = !note.userMarkdown.isNullOrBlank()
+        add(MENU_OBSIDIAN_TEXT, if (hasUserMd) "📄 Obsidian 笔记正文" else "📄 添加 Obsidian 备注")
         if (!note.isPdf) add(MENU_TEMPLATE, "底纹与纸张")
         add(MENU_PROPERTIES, "笔记属性")
         popup.setOnMenuItemClickListener { item ->
             when (item.itemId) {
                 MENU_PASTE -> clipboardPaste()
-                MENU_BOOKMARKS -> showBookmarksDialog()
+                MENU_ZEN -> enterZenMode()
+                MENU_DOCK -> showDockPositionDialog()
+                MENU_OBSIDIAN_TEXT -> showObsidianTextDialog()
+                MENU_BOOKMARKS -> showPageOverview(startWithOutline = true)
                 MENU_RECORDINGS -> showRecordingsDialog()
                 MENU_SHARE_PDF -> shareExport(pdf = true)
                 MENU_SHARE_PNG -> shareExport(pdf = false)
@@ -1518,13 +1836,47 @@ class EditorActivity : AppCompatActivity() {
                 }
                 MENU_DELETE -> confirmDeletePage(currentPageIndex)
                 MENU_CLEAR -> confirmClearPage()
-                MENU_OVERVIEW -> showPageOverview()
+                MENU_OVERVIEW -> showPageOverview(startWithOutline = false)
                 MENU_TEMPLATE -> showPageTemplateDialog()
                 MENU_PROPERTIES -> showEditMetadataDialog()
             }
             true
         }
         showPopup(popup)
+    }
+
+    private fun showObsidianTextDialog() {
+        val currentText = note.userMarkdown.orEmpty()
+        val et = EditText(this).apply {
+            setText(currentText)
+            hint = "在 Obsidian 中编写的补充正文、大纲或思考将显示在此处。\n你也可以在此输入文字，下次同步会自动推送到 Obsidian。"
+            textSize = 14f
+            setTextColor(getColor(R.color.text_primary))
+            setLineSpacing(6f, 1f)
+            background = null
+            gravity = android.view.Gravity.TOP
+            minLines = 8
+        }
+        val scroller = ScrollView(this).apply {
+            val pad = (16 * resources.displayMetrics.density).toInt()
+            setPadding(pad, pad, pad, pad)
+            addView(et, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
+        }
+
+        val builder = AlertDialog.Builder(this)
+            .setTitle("Obsidian 笔记正文")
+            .setView(scroller)
+            .setPositiveButton("保存") { _, _ ->
+                val newText = et.text.toString().trim()
+                val updatedText = if (newText.isEmpty()) null else newText
+                if (updatedText != note.userMarkdown) {
+                    note = note.copy(userMarkdown = updatedText, updatedAt = System.currentTimeMillis())
+                    saveNow()
+                    toast("已保存，下次同步将推送到 Obsidian")
+                }
+            }
+            .setNegativeButton("关闭", null)
+        showDialog(builder)
     }
 
     private fun showBookmarksDialog() {
@@ -1576,17 +1928,22 @@ class EditorActivity : AppCompatActivity() {
         }
     }
 
-    private fun showPageOverview() {
+    private fun showPageOverview(startWithOutline: Boolean = false) {
         val view = layoutInflater.inflate(R.layout.dialog_page_overview, null)
         val rv = view.findViewById<RecyclerView>(R.id.rvPages)
-        val canEdit = PageOps.canEditStructure(note)
-        if (!canEdit) view.findViewById<TextView>(R.id.tvOverviewHint).text = "点按页面即可跳转"
+        val tvHint = view.findViewById<TextView>(R.id.tvOverviewHint)
+        val btnThumbs = view.findViewById<Button>(R.id.btnOverviewThumbs)
+        val btnOutline = view.findViewById<Button>(R.id.btnOverviewOutline)
 
+        val canEdit = PageOps.canEditStructure(note)
         val span = if (resources.configuration.screenWidthDp >= 600) 4 else 3
         val thumbW = (resources.displayMetrics.widthPixels * 0.72f / span).toInt()
         var dialog: AlertDialog? = null
-        lateinit var adapter: PageOverviewAdapter
-        adapter = PageOverviewAdapter(
+
+        lateinit var thumbAdapter: PageOverviewAdapter
+        lateinit var outlineAdapter: PageOutlineAdapter
+
+        thumbAdapter = PageOverviewAdapter(
             scope = lifecycleScope,
             pdfRenderer = pdfRenderer,
             assets = assets,
@@ -1596,16 +1953,58 @@ class EditorActivity : AppCompatActivity() {
                 goToPage(index)
             },
             onLongClick = { index, anchor ->
-                if (canEdit) showPageActionMenu(index, anchor) { adapter.submit(note.pages, currentPageIndex) }
+                if (canEdit) showPageActionMenu(index, anchor) {
+                    thumbAdapter.submit(note.pages, currentPageIndex)
+                }
             },
         )
-        rv.layoutManager = GridLayoutManager(this, span)
-        rv.adapter = adapter
-        adapter.submit(note.pages, currentPageIndex)
-        rv.scrollToPosition(currentPageIndex)
+
+        outlineAdapter = PageOutlineAdapter(
+            onPageClick = { index ->
+                dialog?.dismiss()
+                goToPage(index)
+            },
+            onEditBookmarkClick = { index ->
+                val curBookmark = note.pages[index].bookmark
+                promptText("第 ${index + 1} 页书签", curBookmark ?: "第 ${index + 1} 页") { title ->
+                    val clean = title.trim().ifEmpty { null }
+                    updatePageSettings(false) { p -> if (p.id == note.pages[index].id) p.copy(bookmark = clean) else p }
+                    outlineAdapter.submit(note.pages, currentPageIndex)
+                    thumbAdapter.submit(note.pages, currentPageIndex)
+                }
+            }
+        )
+
+        fun setOverviewMode(isOutline: Boolean) {
+            if (isOutline) {
+                btnOutline.setBackgroundResource(R.drawable.bg_chip_selected)
+                btnOutline.setTextColor(getColor(R.color.white))
+                btnThumbs.setBackgroundResource(android.R.color.transparent)
+                btnThumbs.setTextColor(getColor(R.color.text_primary))
+                tvHint.text = "点按条目即可跳转；可直接编辑各页书签"
+                rv.layoutManager = LinearLayoutManager(this@EditorActivity)
+                rv.adapter = outlineAdapter
+                outlineAdapter.submit(note.pages, currentPageIndex)
+            } else {
+                btnThumbs.setBackgroundResource(R.drawable.bg_chip_selected)
+                btnThumbs.setTextColor(getColor(R.color.white))
+                btnOutline.setBackgroundResource(android.R.color.transparent)
+                btnOutline.setTextColor(getColor(R.color.text_primary))
+                tvHint.text = if (canEdit) "点按跳转；长按可移动、复制、插入或删除页面" else "点按页面即可跳转"
+                rv.layoutManager = GridLayoutManager(this@EditorActivity, span)
+                rv.adapter = thumbAdapter
+                thumbAdapter.submit(note.pages, currentPageIndex)
+            }
+            rv.scrollToPosition(currentPageIndex)
+        }
+
+        btnThumbs.setOnClickListener { setOverviewMode(false) }
+        btnOutline.setOnClickListener { setOverviewMode(true) }
+
+        setOverviewMode(startWithOutline)
 
         val builder = AlertDialog.Builder(this)
-            .setTitle("页面概览（共 ${note.pages.size} 页）")
+            .setTitle("页面概览与大纲（共 ${note.pages.size} 页）")
             .setView(view)
             .setNegativeButton("关闭", null)
         if (canEdit) builder.setNeutralButton("末尾加页") { _, _ -> insertPageAfter(note.pages.lastIndex) }
@@ -1951,7 +2350,7 @@ class EditorActivity : AppCompatActivity() {
         inkCanvas.post {
             val input = penInput ?: return@post
             val origin = IntArray(2).also { inkCanvas.getLocationOnScreen(it) }
-            val rects = listOf(layoutRecognized, layoutSelectionBar, layoutRecordingBar, tvZoom)
+            val rects = listOf(layoutRecognized, layoutSelectionBar, layoutRecordingBar, tvZoom, btnExitZen)
                 .filter { it.visibility == View.VISIBLE && it.width > 0 }
                 .map { v ->
                     val loc = IntArray(2).also { v.getLocationOnScreen(it) }
@@ -1978,7 +2377,7 @@ class EditorActivity : AppCompatActivity() {
         list[currentPageIndex] = list[currentPageIndex].copy(
             strokes = canvasPage.strokes, texts = canvasPage.texts, images = canvasPage.images, layers = canvasPage.layers,
         )
-        note = note.copy(pages = list, updatedAt = System.currentTimeMillis())
+        note = note.copy(pages = list, lastPageIndex = currentPageIndex, updatedAt = System.currentTimeMillis())
     }
 
     /** 连续书写时合并保存，避免每一笔都序列化整本笔记。 */
@@ -2089,6 +2488,7 @@ class EditorActivity : AppCompatActivity() {
             handler.removeCallbacks(recordTicker)
             player.stop()
             syncCurrentPageFromCanvas()
+            note = note.copy(lastPageIndex = currentPageIndex)
             saveNow()
             // 离开编辑器（切到别的应用、熄屏）时确保写到磁盘，进程随后被系统回收也不丢
             repo.flush()
@@ -2107,8 +2507,18 @@ class EditorActivity : AppCompatActivity() {
         pdfRenderer = null
     }
 
+    @Deprecated("Deprecated in Java")
+    override fun onBackPressed() {
+        if (isZenMode) {
+            exitZenMode()
+            return
+        }
+        super.onBackPressed()
+    }
+
     companion object {
         private const val EXTRA_NOTE_ID = "extra_note_id"
+        private const val EXTRA_PAGE_INDEX = "extra_page_index"
         private const val SAVE_DELAY_MS = 1500L
         private val TEXT_SIZES = listOf(24f, 32f, 40f, 56f, 72f, 96f)
         /** 套索、橡皮路径提示的颜色。 */
@@ -2129,12 +2539,18 @@ class EditorActivity : AppCompatActivity() {
         private const val MENU_SHARE_PNG = 12
         private const val MENU_ORIENTATION = 13
         private const val MENU_EXTEND = 14
+        private const val MENU_OBSIDIAN_TEXT = 15
+        private const val MENU_ZEN = 16
+        private const val MENU_DOCK = 17
 
-        fun start(context: Context, noteId: String) {
-            context.startActivity(intent(context, noteId))
+        fun start(context: Context, noteId: String, pageIndex: Int = -1) {
+            context.startActivity(intent(context, noteId, pageIndex))
         }
 
-        fun intent(context: Context, noteId: String): Intent =
-            Intent(context, EditorActivity::class.java).apply { putExtra(EXTRA_NOTE_ID, noteId) }
+        fun intent(context: Context, noteId: String, pageIndex: Int = -1): Intent =
+            Intent(context, EditorActivity::class.java).apply {
+                putExtra(EXTRA_NOTE_ID, noteId)
+                if (pageIndex >= 0) putExtra(EXTRA_PAGE_INDEX, pageIndex)
+            }
     }
 }

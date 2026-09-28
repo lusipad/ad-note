@@ -21,6 +21,7 @@ data class NoteSummary(
     val lastSyncedAt: Long = 0L,
     /** 标题、标签、识别文字、文字框、书签，用于搜索。 */
     val searchText: String = "",
+    val lastPageIndex: Int = 0,
 ) {
     val isLocked: Boolean get() = !lockHash.isNullOrEmpty()
     val isDirty: Boolean get() = updatedAt > lastSyncedAt || lastSyncedAt == 0L
@@ -38,6 +39,7 @@ data class NoteSummary(
             lockHash = note.lockHash,
             lastSyncedAt = note.sync.lastSyncedAt,
             searchText = note.searchableText(),
+            lastPageIndex = note.lastPageIndex,
         )
 
         /** 按关键字、标签、文件夹筛选。 */

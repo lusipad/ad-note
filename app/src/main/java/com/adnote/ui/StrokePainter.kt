@@ -34,7 +34,9 @@ class StrokePainter {
     }
 
     fun drawAll(canvas: Canvas, strokes: List<Stroke>) {
-        for (s in strokes) draw(canvas, s)
+        val (highlighters, normalStrokes) = strokes.partition { it.pen == com.adnote.model.PenType.HIGHLIGHTER }
+        for (s in highlighters) draw(canvas, s)
+        for (s in normalStrokes) draw(canvas, s)
     }
 
     fun draw(canvas: Canvas, stroke: Stroke) {
@@ -75,14 +77,52 @@ class StrokePainter {
             if (line.size < 2) return null
             return Path().apply {
                 moveTo(line[0].x, line[0].y)
-                for (i in 1 until line.size) lineTo(line[i].x, line[i].y)
+                if (line.size == 2) {
+                    lineTo(line[1].x, line[1].y)
+                } else {
+                    for (i in 1 until line.size - 1) {
+                        val midX = (line[i].x + line[i + 1].x) / 2f
+                        val midY = (line[i].y + line[i + 1].y) / 2f
+                        quadTo(line[i].x, line[i].y, midX, midY)
+                    }
+                    lineTo(line.last().x, line.last().y)
+                }
             }
         }
         val outline = StrokeGeometry.outline(stroke)
         if (outline.isEmpty()) return null
+        val pts = stroke.points
+        val startPt = pts.firstOrNull()
+        val endPt = pts.lastOrNull()
+        val halfSize = outline.size / 2
+
         return Path().apply {
             moveTo(outline[0].x, outline[0].y)
-            for (i in 1 until outline.size) lineTo(outline[i].x, outline[i].y)
+            if (halfSize < 2 || startPt == null || endPt == null) {
+                for (i in 1 until outline.size) lineTo(outline[i].x, outline[i].y)
+            } else {
+                // 左侧轮廓：二次贝塞尔平滑
+                for (i in 1 until halfSize - 1) {
+                    val midX = (outline[i].x + outline[i + 1].x) / 2f
+                    val midY = (outline[i].y + outline[i + 1].y) / 2f
+                    quadTo(outline[i].x, outline[i].y, midX, midY)
+                }
+                lineTo(outline[halfSize - 1].x, outline[halfSize - 1].y)
+
+                // 笔画末端圆弧过渡
+                quadTo(endPt.x, endPt.y, outline[halfSize].x, outline[halfSize].y)
+
+                // 右侧轮廓：反向二次贝塞尔平滑
+                for (i in halfSize + 1 until outline.size - 1) {
+                    val midX = (outline[i].x + outline[i + 1].x) / 2f
+                    val midY = (outline[i].y + outline[i + 1].y) / 2f
+                    quadTo(outline[i].x, outline[i].y, midX, midY)
+                }
+                lineTo(outline.last().x, outline.last().y)
+
+                // 笔画起笔端圆弧过渡回到起点
+                quadTo(startPt.x, startPt.y, outline[0].x, outline[0].y)
+            }
             close()
         }
     }

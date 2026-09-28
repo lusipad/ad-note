@@ -99,43 +99,54 @@ class SyncEngine(
         // 2. 获取远端已有的 Markdown
         val existingResp = webDavClient.get(targetMdPath)
         var mergedTags = originalNote.tags
+        var mergedUserMarkdown = originalNote.userMarkdown
 
         if (existingResp != null) {
             val parsed = MarkdownComposer.parse(existingResp.body.orEmpty())
-            // 如果远端 ETag 与上次记录的不同，说明在 Obsidian 端修改过，采用远端 tags
+            val remoteUserContent = buildString {
+                append(parsed.before.trim())
+                if (parsed.after.isNotBlank()) {
+                    if (isNotEmpty()) append("\n\n")
+                    append(parsed.after.trim())
+                }
+            }.trim().ifEmpty { null }
+
+            // 如果远端 ETag 与上次记录的不同，说明在 Obsidian 端修改过，采用远端 tags 与用户正文
             if (existingResp.etag != null && originalNote.sync.remoteMdEtag != null &&
                 existingResp.etag != originalNote.sync.remoteMdEtag
             ) {
                 parsed.tags?.let { mergedTags = it }
+                if (remoteUserContent != null) mergedUserMarkdown = remoteUserContent
+            } else if (mergedUserMarkdown == null && remoteUserContent != null) {
+                // 初次连接或本地未存时，拉取远端已有的用户区内容
+                mergedUserMarkdown = remoteUserContent
             }
         }
 
-        val noteWithTags = if (mergedTags != originalNote.tags) {
-            originalNote.copy(tags = mergedTags)
-        } else originalNote
+        val noteWithMerged = originalNote.copy(tags = mergedTags, userMarkdown = mergedUserMarkdown)
 
         // 3. 组合并上传 Markdown
         val mdContent = MarkdownComposer.compose(
-            note = noteWithTags,
+            note = noteWithMerged,
             inkDir = inkDirRelative,
             existing = existingResp?.body,
         )
         val putMdResp = webDavClient.put(targetMdPath, mdContent, "text/markdown; charset=utf-8")
 
         // 4. 上传各页 SVG
-        for ((index, page) in noteWithTags.pages.withIndex()) {
+        for ((index, page) in noteWithMerged.pages.withIndex()) {
             val svg = SvgExporter.export(page) { rel -> repository.readAsset(originalNote.id, rel) }
             val fileName = MarkdownComposer.pageFileName(index)
             webDavClient.put("$targetInkDir/$fileName", svg, "image/svg+xml; charset=utf-8")
         }
         // 本地删过页：清理远端多出来的 page-NNN.svg
-        for (index in noteWithTags.pages.size until originalNote.sync.remotePageCount) {
+        for (index in noteWithMerged.pages.size until originalNote.sync.remotePageCount) {
             webDavClient.delete("$targetInkDir/${MarkdownComposer.pageFileName(index)}")
         }
 
         // 录音只上传一次（按 id 记录），文件较大
         val uploaded = originalNote.sync.uploadedRecordings.toMutableSet()
-        for (rec in noteWithTags.recordings) {
+        for (rec in noteWithMerged.recordings) {
             if (rec.id in uploaded) continue
             val bytes = repository.readAsset(originalNote.id, rec.path) ?: continue
             webDavClient.putBytes("$targetInkDir/${rec.path}", bytes, "audio/mp4")
@@ -143,7 +154,7 @@ class SyncEngine(
         }
 
         // 5. 上传原始 ink.json（供灾备恢复）
-        val inkJson = NoteJson.encodeToString(Note.serializer(), noteWithTags)
+        val inkJson = NoteJson.encodeToString(Note.serializer(), noteWithMerged)
         webDavClient.put("$targetInkDir/ink.json", inkJson, "application/json; charset=utf-8")
 
         // 6. 更新本地同步状态
@@ -151,10 +162,10 @@ class SyncEngine(
             lastSyncedAt = System.currentTimeMillis(),
             remoteMdPath = targetMdPath,
             remoteMdEtag = putMdResp.etag ?: existingResp?.etag,
-            remotePageCount = noteWithTags.pages.size,
-            uploadedRecordings = uploaded.filter { id -> noteWithTags.recordings.any { it.id == id } },
+            remotePageCount = noteWithMerged.pages.size,
+            uploadedRecordings = uploaded.filter { id -> noteWithMerged.recordings.any { it.id == id } },
         )
-        repository.save(withSyncState(repository.load(originalNote.id) ?: return, originalNote, noteWithTags, syncState))
+        repository.save(withSyncState(repository.load(originalNote.id) ?: return, originalNote, noteWithMerged, syncState))
     }
 
     companion object {
@@ -166,11 +177,12 @@ class SyncEngine(
          */
         fun withSyncState(latest: Note, uploaded: Note, merged: Note, state: SyncState): Note {
             if (latest.updatedAt == uploaded.updatedAt) return merged.copy(sync = state)
-            // 远端改过的标签只在本地这段时间没动标签时采用
+            // 远端改过的标签与正文只在本地这段时间没动时采用
             val tags = if (latest.tags == uploaded.tags) merged.tags else latest.tags
+            val userMd = if (latest.userMarkdown == uploaded.userMarkdown) merged.userMarkdown else latest.userMarkdown
             // 同步时间取两者较大值：保存时同步状态只进不退（见 NoteRepository），但仍早于这次修改，保持待同步
             val syncedAt = maxOf(uploaded.updatedAt, uploaded.sync.lastSyncedAt)
-            return latest.copy(tags = tags, sync = state.copy(lastSyncedAt = syncedAt))
+            return latest.copy(tags = tags, userMarkdown = userMd, sync = state.copy(lastSyncedAt = syncedAt))
         }
     }
 }

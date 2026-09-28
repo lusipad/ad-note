@@ -141,8 +141,53 @@
             android:contentDescription="清除搜索" />
     </LinearLayout>
 
+    <!-- 视图切换分段选择器 -->
+    <LinearLayout
+        android:id="@+id/layoutViewModes"
+        android:layout_width="match_parent"
+        android:layout_height="36dp"
+        android:orientation="horizontal"
+        android:background="@drawable/bg_view_mode_bar"
+        android:padding="2dp"
+        android:layout_marginBottom="8dp">
+
+        <Button
+            android:id="@+id/btnViewAll"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:text="📑 全部"
+            android:textSize="12sp"
+            android:stateListAnimator="@null"
+            android:background="@drawable/bg_chip_selected"
+            android:textColor="@color/white" />
+
+        <Button
+            android:id="@+id/btnViewFolders"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:text="📁 目录视图"
+            android:textSize="12sp"
+            android:stateListAnimator="@null"
+            android:background="@android:color/transparent"
+            android:textColor="@color/text_primary" />
+
+        <Button
+            android:id="@+id/btnViewTags"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:text="🏷️ 标签视图"
+            android:textSize="12sp"
+            android:stateListAnimator="@null"
+            android:background="@android:color/transparent"
+            android:textColor="@color/text_primary" />
+    </LinearLayout>
+
     <!-- 文件夹与标签水平过滤胶囊栏 -->
     <HorizontalScrollView
+        android:id="@+id/scrollFilters"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:scrollbars="none"

@@ -274,4 +274,58 @@ tags: [Obsidian新标签1, 标签2]
         val retagged = edited.copy(tags = listOf("b"))
         org.junit.Assert.assertEquals(listOf("b"), SyncEngine.withSyncState(retagged, uploaded, merged, state).tags)
     }
+
+    @org.junit.Test
+    fun syncBidirectionalObsidianUserMarkdown() {
+        val note = repository.create("读书笔记", "收件箱", 800, 1200)
+        val remoteMd = """
+---
+adnote-id: ${note.id}
+title: 读书笔记
+tags: []
+created: 2026-03-01T00:00:00+08:00
+updated: 2026-03-01T00:00:00+08:00
+---
+
+这是在电脑 Obsidian 里补充的深度思考与卡片摘录。
+
+<!-- adnote:begin 以下内容由 AdNote 自动生成，请勿编辑 -->
+## 第 1 页
+![第 1 页](_ink/${note.id}/page-001.svg)
+<!-- adnote:end -->
+""".trimIndent()
+
+        uploadedFiles["/AdNote/收件箱/读书笔记.md"] = remoteMd
+
+        server.dispatcher = object : Dispatcher() {
+            override fun dispatch(request: RecordedRequest): MockResponse {
+                val path = java.net.URLDecoder.decode(request.path.orEmpty(), "UTF-8")
+                return when (request.method) {
+                    "MKCOL" -> MockResponse().setResponseCode(201)
+                    "GET" -> {
+                        val content = uploadedFiles[path]
+                        if (content != null) {
+                            MockResponse().setResponseCode(200).setBody(content).setHeader("ETag", "\"remote-etag-1\"")
+                        } else {
+                            MockResponse().setResponseCode(404)
+                        }
+                    }
+                    "PUT" -> {
+                        val body = request.body.readUtf8()
+                        uploadedFiles[path] = body
+                        MockResponse().setResponseCode(201).setHeader("ETag", "\"remote-etag-2\"")
+                    }
+                    else -> MockResponse().setResponseCode(200)
+                }
+            }
+        }
+
+        val result = syncEngine.sync(force = true)
+        assertEquals(1, result.success)
+
+        val updated = repository.load(note.id)
+        assertNotNull(updated)
+        assertEquals("这是在电脑 Obsidian 里补充的深度思考与卡片摘录。", updated?.userMarkdown)
+        assertTrue(updated?.searchableText()?.contains("深度思考与卡片摘录") == true)
+    }
 }

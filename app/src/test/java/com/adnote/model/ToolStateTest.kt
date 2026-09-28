@@ -81,6 +81,44 @@ class ToolStateTest {
         val stroke = NoteJson.decodeFromString(Stroke.serializer(), json)
         assertEquals(PenType.FOUNTAIN, stroke.pen)
     }
+
+    @Test
+    fun penPresetsSwitchingAndSaving() {
+        var s = ToolState()
+        assertEquals(3, s.presets.size)
+        // Default matches slot 0: FOUNTAIN, BLACK, 2.0f
+        s = s.copy(tool = Tool.PEN, penType = PenType.FOUNTAIN, penColor = PenPresets.BLACK.hex, penWidth = PenPresets.WIDTH_FINE)
+        assertEquals(0, s.activePresetIndex())
+
+        // Apply slot 1 (red ballpoint)
+        s = s.applyPreset(s.presets[1])
+        assertEquals(Tool.PEN, s.tool)
+        assertEquals(PenType.BALLPOINT, s.penType)
+        assertEquals(PenPresets.RED.hex, s.penColor)
+        assertEquals(1, s.activePresetIndex())
+
+        // Apply slot 2 (highlighter)
+        s = s.applyPreset(s.presets[2])
+        assertEquals(Tool.HIGHLIGHTER, s.tool)
+        assertEquals(2, s.activePresetIndex())
+
+        // Modify pen setting, no preset matches
+        s = s.copy(highlighterColor = "#000000")
+        assertEquals(null, s.activePresetIndex())
+
+        // Save custom setting into slot 2
+        s = s.savePreset(2)
+        assertEquals(2, s.activePresetIndex())
+        assertEquals("#000000", s.presets[2].color)
+    }
+
+    @Test
+    fun dockPositionDefaultsToTopAndPersists() {
+        val s = ToolState(dockPosition = DockPosition.LEFT)
+        val json = ToolState.toJson(s)
+        val loaded = ToolState.fromJson(json)
+        assertEquals(DockPosition.LEFT, loaded.dockPosition)
+    }
 }
 
 class ModelCompatTest {

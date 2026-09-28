@@ -93,6 +93,25 @@ class NoteRepositoryTest {
         assertEquals(1, list.size)
         assertEquals(n.id, list[0].id)
     }
+
+    @Test
+    fun testCorruptedNoteRecoversFromBackup() {
+        val repo = NoteRepository(tempFolder.root)
+        val note = repo.create("重要笔记原版", "工作", 100, 100)
+        repo.save(note.copy(title = "重要笔记更新版"))
+
+        val dir = repo.getNoteDir(note.id)
+        val noteFile = File(dir, "note.json")
+        val bakFile = File(dir, "note.json.bak")
+        assertTrue(bakFile.exists())
+
+        // 模拟 note.json 损坏
+        noteFile.writeText("{ broken json content")
+
+        val loaded = repo.load(note.id)
+        assertNotNull(loaded)
+        assertEquals("重要笔记原版", loaded?.title)
+    }
 }
 
 class NoteRepositoryTrashTest {
