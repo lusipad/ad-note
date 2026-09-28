@@ -23,6 +23,7 @@ import com.adnote.export.RemotePaths
 import com.adnote.model.Note
 import com.adnote.model.PageTemplate
 import com.adnote.model.PaperPresets
+import com.adnote.model.PinLock
 import com.adnote.pen.EinkRefresher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -53,12 +54,8 @@ class MainActivity : AppCompatActivity() {
     }
 
     private val noteAdapter = NoteAdapter(
-        onItemClick = { note ->
-            EditorActivity.start(this, note.id)
-        },
-        onItemLongClick = { note ->
-            showDeleteNoteDialog(note)
-        }
+        onItemClick = { note -> openNote(note) },
+        onItemLongClick = { note -> showNoteActions(note) }
     )
 
     private var selectedFolder: String? = null
@@ -70,6 +67,149 @@ class MainActivity : AppCompatActivity() {
 
         initViews()
         setupListeners()
+        AdNoteApp.instance.repository.purgeExpired()
+        handleQuickNoteIntent(intent)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        handleQuickNoteIntent(intent)
+    }
+
+    /** 桌面快捷方式 / 小部件「速记」：直接新建一页并打开编辑器。 */
+    private fun handleQuickNoteIntent(intent: Intent?) {
+        if (intent?.action != ACTION_QUICK_NOTE) return
+        intent.action = null
+        val title = "速记 " + SimpleDateFormat("MM-dd HH:mm", Locale.getDefault()).format(Date())
+        val created = AdNoteApp.instance.repository.create(
+            title = title,
+            folder = Note.DEFAULT_FOLDER,
+            pageWidth = 1404,
+            pageHeight = 1872,
+            template = PageTemplate.RULED,
+        )
+        EditorActivity.start(this, created.id)
+    }
+
+    private fun openNote(note: Note) {
+        if (!note.isLocked) {
+            EditorActivity.start(this, note.id)
+            return
+        }
+        askPin("输入 PIN 打开「${note.title}」") { pin ->
+            if (PinLock.verify(pin, note.lockHash)) EditorActivity.start(this, note.id)
+            else Toast.makeText(this, "PIN 不正确", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun askPin(title: String, onPin: (String) -> Unit) {
+        val et = EditText(this).apply {
+            inputType = android.text.InputType.TYPE_CLASS_NUMBER or android.text.InputType.TYPE_NUMBER_VARIATION_PASSWORD
+            hint = "4–12 位数字"
+        }
+        val wrap = LinearLayout(this).apply {
+            val pad = (20 * resources.displayMetrics.density).toInt()
+            setPadding(pad, pad / 2, pad, 0)
+            addView(et, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
+        }
+        AlertDialog.Builder(this)
+            .setTitle(title)
+            .setView(wrap)
+            .setPositiveButton("确定") { _, _ -> onPin(et.text.toString()) }
+            .setNegativeButton("取消", null)
+            .show()
+    }
+
+    private fun showNoteActions(note: Note) {
+        val actions = listOf("设置封面颜色", if (note.isLocked) "修改或解除 PIN 锁" else "用 PIN 锁定", "移到回收站")
+        AlertDialog.Builder(this)
+            .setTitle(note.title)
+            .setItems(actions.toTypedArray()) { _, which ->
+                when (which) {
+                    0 -> showCoverDialog(note)
+                    1 -> if (note.isLocked) {
+                        askPin("输入当前 PIN") { pin ->
+                            if (PinLock.verify(pin, note.lockHash)) showSetPinDialog(note, allowRemove = true)
+                            else Toast.makeText(this, "PIN 不正确", Toast.LENGTH_SHORT).show()
+                        }
+                    } else showSetPinDialog(note, allowRemove = false)
+                    2 -> showDeleteNoteDialog(note)
+                }
+            }
+            .show()
+    }
+
+    private fun showCoverDialog(note: Note) {
+        val names = listOf("无") + COVER_COLORS.map { it.second }
+        AlertDialog.Builder(this)
+            .setTitle("封面颜色")
+            .setItems(names.toTypedArray()) { _, which ->
+                val color = if (which == 0) null else COVER_COLORS[which - 1].first
+                AdNoteApp.instance.repository.save(note.copy(coverColor = color))
+                refreshNotes()
+            }
+            .show()
+    }
+
+    private fun showSetPinDialog(note: Note, allowRemove: Boolean) {
+        askPin(if (allowRemove) "设置新 PIN（留空则解除锁定）" else "设置 PIN（4–12 位数字）") { pin ->
+            val repo = AdNoteApp.instance.repository
+            when {
+                pin.isEmpty() && allowRemove -> {
+                    repo.save(note.copy(lockHash = null))
+                    Toast.makeText(this, "已解除锁定", Toast.LENGTH_SHORT).show()
+                }
+                PinLock.isValidPin(pin) -> {
+                    repo.save(note.copy(lockHash = PinLock.hash(pin)))
+                    Toast.makeText(this, "已锁定。注意：这是打开时的访问锁，文件和同步内容并未加密", Toast.LENGTH_LONG).show()
+                }
+                else -> Toast.makeText(this, "PIN 需为 4–12 位数字", Toast.LENGTH_SHORT).show()
+            }
+            refreshNotes()
+        }
+    }
+
+    private fun showTrashDialog() {
+        val repo = AdNoteApp.instance.repository
+        val trashed = repo.listTrash()
+        if (trashed.isEmpty()) {
+            Toast.makeText(this, "回收站是空的", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val fmt = SimpleDateFormat("MM-dd HH:mm", Locale.getDefault())
+        val labels = trashed.map { "${it.note.title}（${fmt.format(Date(it.deletedAt))} 删除）" }
+        AlertDialog.Builder(this)
+            .setTitle("回收站（30 天后自动清除）")
+            .setItems(labels.toTypedArray()) { _, which ->
+                val item = trashed[which]
+                AlertDialog.Builder(this)
+                    .setTitle(item.note.title)
+                    .setPositiveButton("恢复") { _, _ ->
+                        repo.restore(item.note.id)
+                        refreshNotes()
+                        refreshFilters()
+                        Toast.makeText(this, "已恢复，下次同步会重新上传", Toast.LENGTH_SHORT).show()
+                    }
+                    .setNeutralButton("彻底删除") { _, _ ->
+                        repo.purge(item.note.id)
+                        refreshFilters()
+                    }
+                    .setNegativeButton("取消", null)
+                    .show()
+            }
+            .setNeutralButton("清空回收站") { _, _ ->
+                AlertDialog.Builder(this)
+                    .setTitle("清空回收站？")
+                    .setMessage("${trashed.size} 篇笔记将被永久删除，无法恢复。")
+                    .setPositiveButton("清空") { _, _ ->
+                        trashed.forEach { repo.purge(it.note.id) }
+                        refreshFilters()
+                    }
+                    .setNegativeButton("取消", null)
+                    .show()
+            }
+            .setNegativeButton("关闭", null)
+            .show()
     }
 
     override fun onResume() {
@@ -178,6 +318,11 @@ class MainActivity : AppCompatActivity() {
             }
             layoutFilters.addView(btn)
         }
+
+        val trashCount = AdNoteApp.instance.repository.listTrash().size
+        if (trashCount > 0) {
+            layoutFilters.addView(createFilterButton("🗑 回收站 ($trashCount)", false) { showTrashDialog() })
+        }
     }
 
     private fun createFilterButton(text: String, isSelected: Boolean, onClick: () -> Unit): Button {
@@ -219,116 +364,14 @@ class MainActivity : AppCompatActivity() {
         etFolder.setText(selectedFolder ?: Note.DEFAULT_FOLDER)
         selectedTag?.let { etTags.setText(it) }
 
-        var selectedTemplate = PageTemplate.RULED
-        var selectedColorHex = PaperPresets.WHITE.hex
-        val categories = listOf("全部", "常规", "横线", "方格", "点阵", "练字", "专业")
-        var selectedCategory = selectedTemplate.category.let { cat -> if (categories.contains(cat)) cat else "全部" }
-
-        fun refreshTemplateChips() {
-            layoutTemplateChips.removeAllViews()
-            val filtered = if (selectedCategory == "全部") {
-                PageTemplate.entries
-            } else {
-                PageTemplate.entries.filter { it.category == selectedCategory }
-            }
-            filtered.forEach { template ->
-                val isSelected = template == selectedTemplate
-                val btn = Button(this).apply {
-                    text = template.displayName
-                    textSize = 12f
-                    stateListAnimator = null
-                    val lp = LinearLayout.LayoutParams(
-                        LinearLayout.LayoutParams.WRAP_CONTENT,
-                        (32 * resources.displayMetrics.density).toInt()
-                    ).apply {
-                        marginEnd = (8 * resources.displayMetrics.density).toInt()
-                    }
-                    layoutParams = lp
-                    setPadding((12 * resources.displayMetrics.density).toInt(), 0, (12 * resources.displayMetrics.density).toInt(), 0)
-                    if (isSelected) {
-                        setBackgroundResource(R.drawable.bg_chip_selected)
-                        setTextColor(getColor(R.color.white))
-                    } else {
-                        setBackgroundResource(R.drawable.bg_chip_unselected)
-                        setTextColor(getColor(R.color.text_primary))
-                    }
-                    setOnClickListener {
-                        selectedTemplate = template
-                        refreshTemplateChips()
-                    }
-                }
-                layoutTemplateChips.addView(btn)
-            }
-        }
-
-        fun refreshCategoryChips() {
-            layoutTemplateCategoryChips.removeAllViews()
-            categories.forEach { cat ->
-                val isSelected = cat == selectedCategory
-                val btn = Button(this).apply {
-                    text = cat
-                    textSize = 12f
-                    stateListAnimator = null
-                    val lp = LinearLayout.LayoutParams(
-                        LinearLayout.LayoutParams.WRAP_CONTENT,
-                        (32 * resources.displayMetrics.density).toInt()
-                    ).apply {
-                        marginEnd = (8 * resources.displayMetrics.density).toInt()
-                    }
-                    layoutParams = lp
-                    setPadding((12 * resources.displayMetrics.density).toInt(), 0, (12 * resources.displayMetrics.density).toInt(), 0)
-                    if (isSelected) {
-                        setBackgroundResource(R.drawable.bg_chip_selected)
-                        setTextColor(getColor(R.color.white))
-                    } else {
-                        setBackgroundResource(R.drawable.bg_chip_unselected)
-                        setTextColor(getColor(R.color.text_primary))
-                    }
-                    setOnClickListener {
-                        selectedCategory = cat
-                        refreshCategoryChips()
-                        refreshTemplateChips()
-                    }
-                }
-                layoutTemplateCategoryChips.addView(btn)
-            }
-        }
-
-        fun refreshColorChips() {
-            layoutColorChips.removeAllViews()
-            PaperPresets.ALL.forEach { tone ->
-                val isSelected = tone.hex.equals(selectedColorHex, ignoreCase = true)
-                val btn = Button(this).apply {
-                    text = tone.displayName
-                    textSize = 12f
-                    stateListAnimator = null
-                    val lp = LinearLayout.LayoutParams(
-                        LinearLayout.LayoutParams.WRAP_CONTENT,
-                        (32 * resources.displayMetrics.density).toInt()
-                    ).apply {
-                        marginEnd = (8 * resources.displayMetrics.density).toInt()
-                    }
-                    layoutParams = lp
-                    setPadding((12 * resources.displayMetrics.density).toInt(), 0, (12 * resources.displayMetrics.density).toInt(), 0)
-                    if (isSelected) {
-                        setBackgroundResource(R.drawable.bg_chip_selected)
-                        setTextColor(getColor(R.color.white))
-                    } else {
-                        setBackgroundResource(R.drawable.bg_chip_unselected)
-                        setTextColor(getColor(R.color.text_primary))
-                    }
-                    setOnClickListener {
-                        selectedColorHex = tone.hex
-                        refreshColorChips()
-                    }
-                }
-                layoutColorChips.addView(btn)
-            }
-        }
-
-        refreshCategoryChips()
-        refreshTemplateChips()
-        refreshColorChips()
+        val picker = TemplatePicker(
+            context = this,
+            categoryContainer = layoutTemplateCategoryChips,
+            templateContainer = layoutTemplateChips,
+            colorContainer = layoutColorChips,
+            initialTemplate = PageTemplate.RULED,
+            initialColor = PaperPresets.WHITE.hex,
+        )
 
         AlertDialog.Builder(this)
             .setTitle(R.string.new_note_dialog_title)
@@ -345,8 +388,8 @@ class MainActivity : AppCompatActivity() {
                     folder = folder,
                     pageWidth = 1404,
                     pageHeight = 1872,
-                    template = selectedTemplate,
-                    backgroundColor = selectedColorHex
+                    template = picker.selectedTemplate,
+                    backgroundColor = picker.selectedColor
                 ).copy(tags = tags)
                 AdNoteApp.instance.repository.save(created)
 
@@ -358,14 +401,14 @@ class MainActivity : AppCompatActivity() {
 
     private fun showDeleteNoteDialog(note: Note) {
         AlertDialog.Builder(this)
-            .setTitle("删除笔记")
-            .setMessage("确定删除笔记「${note.title}」吗？\n若已同步，远端对应文件将在下次同步时一并清除。")
-            .setPositiveButton("删除") { _, _ ->
+            .setTitle("移到回收站")
+            .setMessage("「${note.title}」将移到回收站，30 天内可恢复。\n若已同步，远端对应文件将在下次同步时移除（恢复后会重新上传）。")
+            .setPositiveButton("移到回收站") { _, _ ->
                 val inkDir = RemotePaths.inkDir(note)
-                AdNoteApp.instance.repository.delete(note, inkDir)
+                AdNoteApp.instance.repository.moveToTrash(note, inkDir)
                 refreshNotes()
                 refreshFilters()
-                Toast.makeText(this, "已删除", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, "已移到回收站", Toast.LENGTH_SHORT).show()
             }
             .setNegativeButton("取消", null)
             .show()
@@ -423,7 +466,16 @@ class MainActivity : AppCompatActivity() {
             }
         }
     }
+
+    companion object {
+        const val ACTION_QUICK_NOTE = "com.adnote.action.QUICK_NOTE"
+    }
 }
+
+private val COVER_COLORS = listOf(
+    "#111827" to "墨黑", "#1E3A8A" to "藏青", "#047857" to "墨绿", "#B91C1C" to "朱红",
+    "#B45309" to "琥珀", "#6D28D9" to "葡萄紫", "#9CA3AF" to "浅灰",
+)
 
 class NoteAdapter(
     private val onItemClick: (Note) -> Unit,
@@ -458,9 +510,13 @@ class NoteAdapter(
         private val tvPageCount: TextView = view.findViewById(R.id.tvPageCount)
         private val tvDate: TextView = view.findViewById(R.id.tvDate)
         private val tvTags: TextView = view.findViewById(R.id.tvTags)
+        private val viewCover: View = view.findViewById(R.id.viewCover)
 
         fun bind(note: Note) {
-            tvTitle.text = note.title
+            tvTitle.text = if (note.isLocked) "🔒 ${note.title}" else note.title
+            val cover = note.coverColor
+            viewCover.visibility = if (cover != null) View.VISIBLE else View.GONE
+            if (cover != null) viewCover.setBackgroundColor(StrokePainter.parseColor(cover))
             tvPdfBadge.visibility = if (note.isPdf) View.VISIBLE else View.GONE
             tvFolder.text = note.folder
             tvPageCount.text = "${note.pages.size} 页"

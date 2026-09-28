@@ -240,7 +240,74 @@
                 android:text="优先使用文石硬件直绘低延迟通道"
                 android:textSize="13sp"
                 android:textColor="@color/text_primary"
-                android:layout_marginBottom="12dp" />
+                android:layout_marginBottom="6dp" />
+
+            <CheckBox
+                android:id="@+id/cbVolumeKeyPaging"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="音量键 / 翻页键翻页"
+                android:textSize="13sp"
+                android:textColor="@color/text_primary"
+                android:layout_marginBottom="6dp" />
+
+            <CheckBox
+                android:id="@+id/cbFingerSwipePaging"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="手指左右滑动翻页（手指不书写时生效）"
+                android:textSize="13sp"
+                android:textColor="@color/text_primary"
+                android:layout_marginBottom="6dp" />
+
+            <CheckBox
+                android:id="@+id/cbScratchOut"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="在笔迹上来回涂抹即删除（划掉）"
+                android:textSize="13sp"
+                android:textColor="@color/text_primary"
+                android:layout_marginBottom="6dp" />
+
+            <CheckBox
+                android:id="@+id/cbShapeHold"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="画完停住半秒自动规整为直线、矩形、圆"
+                android:textSize="13sp"
+                android:textColor="@color/text_primary"
+                android:layout_marginBottom="6dp" />
+
+            <CheckBox
+                android:id="@+id/cbAutoRecognize"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="离开页面时后台识别手写（用于搜索与同步，需已下载模型）"
+                android:textSize="13sp"
+                android:textColor="@color/text_primary"
+                android:layout_marginBottom="6dp" />
+
+            <Button
+                android:id="@+id/btnStylusButton"
+                android:layout_width="wrap_content"
+                android:layout_height="36dp"
+                android:textSize="12sp"
+                android:textColor="@color/text_primary"
+                android:background="@drawable/bg_button_secondary"
+                android:paddingHorizontal="14dp"
+                android:stateListAnimator="@null"
+                android:layout_marginBottom="8dp" />
+
+            <Button
+                android:id="@+id/btnFullRefreshEvery"
+                android:layout_width="wrap_content"
+                android:layout_height="36dp"
+                android:textSize="12sp"
+                android:textColor="@color/text_primary"
+                android:background="@drawable/bg_button_secondary"
+                android:paddingHorizontal="14dp"
+                android:stateListAnimator="@null"
+                android:layout_marginBottom="8dp" />
 
             <Button
                 android:id="@+id/btnFullRefreshTest"

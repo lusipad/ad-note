@@ -119,6 +119,21 @@ class WebDavClient(
         }
     }
 
+    /** 上传二进制文件（录音等）。 */
+    fun putBytes(relativePath: String, bytes: ByteArray, contentType: String): WebDavResponse {
+        ensureParentDirs(relativePath)
+        val request = newRequestBuilder(resolveUrl(relativePath))
+            .put(bytes.toRequestBody(contentType.toMediaType()))
+            .build()
+        return client.newCall(request).execute().use { response ->
+            if (response.code == 401) throw WebDavAuthException()
+            if (!response.isSuccessful && response.code != 201 && response.code != 204) {
+                throw WebDavException("PUT 失败 (${response.code}): $relativePath", response.code)
+            }
+            WebDavResponse(statusCode = response.code, etag = response.header("ETag"), body = null)
+        }
+    }
+
     fun get(relativePath: String): WebDavResponse? {
         val url = resolveUrl(relativePath)
         val request = newRequestBuilder(url).get().build()

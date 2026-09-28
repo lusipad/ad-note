@@ -2,11 +2,16 @@ package com.adnote.ink
 
 import com.adnote.model.InkPoint
 import com.adnote.model.Stroke
+import com.adnote.model.newId
 import kotlin.math.hypot
 import kotlin.math.max
 import kotlin.math.min
 
-/** 整笔擦除：橡皮轨迹经过某条笔画附近或相交时，删除整条笔画。 */
+/**
+ * 橡皮擦几何。
+ * - [hitStrokes]：整笔擦除，橡皮轨迹经过某条笔画附近或相交时，删除整条笔画；
+ * - [erasePartial]：局部擦除，只去掉橡皮扫过的那一段，剩余部分拆分成新的笔画。
+ */
 object Eraser {
 
     /** 返回被橡皮轨迹命中的笔画 id。radius 为橡皮半径（像素）。 */
@@ -28,6 +33,86 @@ object Eraser {
             if (intersects(s.points, eraserPath, radius + s.width / 2f)) hit += s.id
         }
         return hit
+    }
+
+    /**
+     * 局部擦除。返回擦除后的笔画列表；没有任何笔画被触及时返回原列表（同一对象）。
+     *
+     * 做法：把被触及笔画的采样点重采样到不超过半径 1/3 的间距，删掉落在橡皮范围内的点，
+     * 剩余连续片段各自成为一条新笔画（保留颜色、笔型和粗细）。
+     */
+    fun erasePartial(strokes: List<Stroke>, eraserPath: List<InkPoint>, radius: Float): List<Stroke> {
+        if (eraserPath.isEmpty() || strokes.isEmpty()) return strokes
+        var eMinX = Float.MAX_VALUE; var eMinY = Float.MAX_VALUE
+        var eMaxX = -Float.MAX_VALUE; var eMaxY = -Float.MAX_VALUE
+        for (e in eraserPath) {
+            eMinX = min(eMinX, e.x); eMinY = min(eMinY, e.y)
+            eMaxX = max(eMaxX, e.x); eMaxY = max(eMaxY, e.y)
+        }
+
+        var changed = false
+        val out = ArrayList<Stroke>(strokes.size)
+        for (s in strokes) {
+            val b = StrokeGeometry.bounds(s)
+            val overlap = !(eMaxX < b[0] - radius || eMinX > b[2] + radius ||
+                            eMaxY < b[1] - radius || eMinY > b[3] + radius)
+            if (!overlap) { out += s; continue }
+
+            val threshold = radius + s.width / 2f
+            if (s.points.size == 1) {
+                if (distToPath(s.points[0], eraserPath) <= threshold) changed = true else out += s
+                continue
+            }
+
+            val dense = resample(s.points, max(radius / 3f, 1f))
+            val keep = BooleanArray(dense.size) { distToPath(dense[it], eraserPath) > threshold }
+            if (keep.all { it }) { out += s; continue }
+
+            changed = true
+            var start = -1
+            for (i in 0..dense.size) {
+                val k = i < dense.size && keep[i]
+                if (k && start < 0) start = i
+                if (!k && start >= 0) {
+                    // 只剩一个点的碎片视为被擦掉，避免留下孤立墨点
+                    if (i - start >= 2) out += s.copy(id = newId(), points = dense.subList(start, i).toList())
+                    start = -1
+                }
+            }
+        }
+        return if (changed) out else strokes
+    }
+
+    /** 在相邻采样点之间线性插值，使间距不超过 [step]。 */
+    internal fun resample(points: List<InkPoint>, step: Float): List<InkPoint> {
+        if (points.size < 2) return points
+        val out = ArrayList<InkPoint>(points.size * 2)
+        out += points[0]
+        for (i in 1 until points.size) {
+            val a = points[i - 1]; val b = points[i]
+            val d = hypot(b.x - a.x, b.y - a.y)
+            val n = (d / step).toInt()
+            for (k in 1..n) {
+                val t = k / (n + 1f)
+                out += InkPoint(
+                    x = a.x + (b.x - a.x) * t,
+                    y = a.y + (b.y - a.y) * t,
+                    pressure = a.pressure + (b.pressure - a.pressure) * t,
+                    t = a.t + ((b.t - a.t) * t).toLong(),
+                )
+            }
+            out += b
+        }
+        return out
+    }
+
+    private fun distToPath(p: InkPoint, path: List<InkPoint>): Float {
+        if (path.size == 1) return hypot(p.x - path[0].x, p.y - path[0].y)
+        var best = Float.MAX_VALUE
+        for (j in 0 until path.size - 1) {
+            best = min(best, distToSegment(p, path[j], path[j + 1]))
+        }
+        return best
     }
 
     private fun intersects(stroke: List<InkPoint>, eraser: List<InkPoint>, threshold: Float): Boolean {

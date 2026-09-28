@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:padding="20dp"
+    android:background="@color/bg_surface">
+
+    <TextView
+        android:id="@+id/tvEraserModeLabel"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="擦除方式"
+        android:textSize="12sp"
+        android:textStyle="bold"
+        android:textColor="@color/text_secondary"
+        android:layout_marginBottom="8dp" />
+
+    <HorizontalScrollView
+        android:id="@+id/scrollEraserModeChips"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:scrollbars="none"
+        android:layout_marginBottom="16dp">
+        <LinearLayout
+            android:id="@+id/layoutEraserModeChips"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal" />
+    </HorizontalScrollView>
+
+    <TextView
+        android:id="@+id/tvEraserModeHint"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:textSize="12sp"
+        android:textColor="@color/text_tertiary"
+        android:layout_marginTop="-8dp"
+        android:layout_marginBottom="16dp" />
+
+    <TextView
+        android:id="@+id/tvEraserSizeLabel"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="橡皮大小"
+        android:textSize="12sp"
+        android:textStyle="bold"
+        android:textColor="@color/text_secondary"
+        android:layout_marginBottom="8dp" />
+
+    <HorizontalScrollView
+        android:id="@+id/scrollEraserSizeChips"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:scrollbars="none"
+        android:layout_marginBottom="16dp">
+        <LinearLayout
+            android:id="@+id/layoutEraserSizeChips"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal" />
+    </HorizontalScrollView>
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="提示：文石等设备可直接用笔尾或笔身按键擦除，同样遵循以上设置。"
+        android:textSize="12sp"
+        android:textColor="@color/text_tertiary"
+        android:layout_marginBottom="16dp" />
+
+    <Button
+        android:id="@+id/btnClearPage"
+        android:layout_width="wrap_content"
+        android:layout_height="36dp"
+        android:text="清空本页笔迹"
+        android:textSize="13sp"
+        android:textColor="@color/text_primary"
+        android:background="@drawable/bg_button_secondary"
+        android:paddingHorizontal="14dp"
+        android:stateListAnimator="@null" />
+</LinearLayout>

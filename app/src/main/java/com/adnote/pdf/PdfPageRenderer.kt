@@ -85,6 +85,25 @@ class PdfPageRenderer(private val pdfFile: File) : Closeable {
         return bitmap
     }
 
+    /**
+     * 渲染一张不进缓存的小图（页面概览缩略图）。
+     * 不能复用 [renderPage]：缩略图会把正在显示的大图挤出 LRU 缓存并被回收。
+     */
+    @Synchronized
+    fun renderThumbnail(pageIndex: Int, targetWidth: Int, targetHeight: Int): Bitmap? {
+        val r = renderer ?: return null
+        if (pageIndex !in 0 until r.pageCount) return null
+        val page = r.openPage(pageIndex)
+        val bitmap = Bitmap.createBitmap(targetWidth, targetHeight, Bitmap.Config.ARGB_8888)
+        bitmap.eraseColor(Color.WHITE)
+        val transform = Matrix().apply {
+            setScale(targetWidth.toFloat() / page.width, targetHeight.toFloat() / page.height)
+        }
+        page.render(bitmap, null, transform, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+        page.close()
+        return bitmap
+    }
+
     @Synchronized
     override fun close() {
         bitmapCache.evictAll()

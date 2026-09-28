@@ -83,7 +83,8 @@ class MlKitRecognizer(
         runCatching {
             val inkBuilder = Ink.builder()
             for (stroke in page.strokes) {
-                if (stroke.points.isEmpty()) continue
+                // 荧光笔是标注，不参与文字识别
+                if (stroke.points.isEmpty() || stroke.pen == com.adnote.model.PenType.HIGHLIGHTER) continue
                 val strokeBuilder = Ink.Stroke.builder()
                 for (pt in stroke.points) {
                     strokeBuilder.addPoint(Ink.Point.create(pt.x, pt.y, pt.t))

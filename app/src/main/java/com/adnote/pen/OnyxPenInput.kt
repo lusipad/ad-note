@@ -7,6 +7,7 @@ import android.os.Looper
 import android.util.Log
 import android.view.View
 import com.adnote.model.InkPoint
+import com.adnote.model.PenType
 import com.onyx.android.sdk.data.note.TouchPoint
 import com.onyx.android.sdk.pen.RawInputCallback
 import com.onyx.android.sdk.pen.TouchHelper
@@ -19,6 +20,14 @@ class OnyxPenInput : PenInput {
     private var touchHelper: TouchHelper? = null
     private var listener: PenInputListener? = null
     private val mainHandler = Handler(Looper.getMainLooper())
+
+    /** 设备压感最大值：不同型号不同（4096 / 8192），优先向固件查询。 */
+    private val maxPressure: Float by lazy {
+        runCatching {
+            val epd = Class.forName("com.onyx.android.sdk.api.device.epd.EpdController")
+            (epd.getMethod("getMaxTouchPressure").invoke(null) as Number).toFloat()
+        }.getOrNull()?.takeIf { it > 0f } ?: 4096f
+    }
 
     private val currentStrokePoints = ArrayList<InkPoint>()
     private val currentErasePoints = ArrayList<InkPoint>()
@@ -123,6 +132,38 @@ class OnyxPenInput : PenInput {
         }
     }
 
+    override fun setPenStyle(pen: PenType) {
+        val helper = touchHelper ?: return
+        // 不同版本 SDK 提供的笔锋常量不完全相同，用反射按名称查找，找不到就退回铅笔笔锋
+        val names = when (pen) {
+            PenType.FOUNTAIN -> listOf("STROKE_STYLE_FOUNTAIN")
+            PenType.BRUSH -> listOf("STROKE_STYLE_NEO_BRUSH", "STROKE_STYLE_BRUSH", "STROKE_STYLE_FOUNTAIN")
+            PenType.MARKER, PenType.HIGHLIGHTER -> listOf("STROKE_STYLE_MARKER")
+            PenType.PENCIL -> listOf("STROKE_STYLE_CHARCOAL", "STROKE_STYLE_PENCIL")
+            PenType.BALLPOINT -> listOf("STROKE_STYLE_PENCIL")
+        }
+        val style = names.firstNotNullOfOrNull { name ->
+            runCatching { TouchHelper::class.java.getField(name).getInt(null) }.getOrNull()
+        } ?: TouchHelper.STROKE_STYLE_PENCIL
+        runCatching { helper.setStrokeStyle(style) }
+    }
+
+    override fun setRenderEnabled(enabled: Boolean) {
+        val helper = touchHelper ?: return
+        // setRawDrawingRenderEnabled 仅在较新的 SDK 中存在
+        runCatching {
+            helper.javaClass.getMethod("setRawDrawingRenderEnabled", Boolean::class.javaPrimitiveType)
+                .invoke(helper, enabled)
+        }.onFailure { Log.w("OnyxPenInput", "当前 SDK 不支持关闭直绘渲染: ${it.message}") }
+    }
+
+    override fun setExcludeRects(rects: List<Rect>) {
+        val helper = touchHelper ?: return
+        runCatching {
+            helper.javaClass.getMethod("setExcludeRect", List::class.java).invoke(helper, rects)
+        }.onFailure { Log.w("OnyxPenInput", "当前 SDK 不支持排除区域: ${it.message}") }
+    }
+
     override fun detach() {
         runCatching {
             touchHelper?.closeRawDrawing()
@@ -135,7 +176,7 @@ class OnyxPenInput : PenInput {
         InkPoint(
             x = this.x,
             y = this.y,
-            pressure = (this.pressure / 4096f).coerceIn(0f, 1f).let { if (it == 0f) 0.5f else it },
+            pressure = (this.pressure / maxPressure).coerceIn(0f, 1f).let { if (it == 0f) 0.5f else it },
             t = if (this.timestamp > 0) this.timestamp else System.currentTimeMillis()
         )
 }

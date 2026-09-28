@@ -1,6 +1,7 @@
 package com.adnote.ink
 
 import com.adnote.model.InkPoint
+import com.adnote.model.PenType
 import com.adnote.model.Stroke
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -73,5 +74,70 @@ class StrokeGeometryTest {
         assertEquals(15f, bounds[1], 0.001f) // 20 - 5
         assertEquals(55f, bounds[2], 0.001f) // 50 + 5
         assertEquals(85f, bounds[3], 0.001f) // 80 + 5
+    }
+}
+
+class PenTypeGeometryTest {
+
+    @Test
+    fun penTypesMapPressureDifferently() {
+        val light = 0f
+        val heavy = 1f
+        fun w(pen: PenType, p: Float) =
+            StrokeGeometry.widthAt(Stroke(points = emptyList(), width = 10f, pen = pen), p)
+
+        // 钢笔与旧版一致
+        assertEquals(StrokeGeometry.widthAt(10f, 0.3f), w(PenType.FOUNTAIN, 0.3f), 0.001f)
+        // 马克笔、荧光笔等宽
+        assertEquals(10f, w(PenType.MARKER, light), 0.001f)
+        assertEquals(10f, w(PenType.MARKER, heavy), 0.001f)
+        assertEquals(10f, w(PenType.HIGHLIGHTER, 0.5f), 0.001f)
+        // 毛笔的粗细变化幅度最大
+        val brushRange = w(PenType.BRUSH, heavy) - w(PenType.BRUSH, light)
+        for (pen in listOf(PenType.FOUNTAIN, PenType.BALLPOINT, PenType.PENCIL)) {
+            assertTrue(brushRange > w(pen, heavy) - w(pen, light))
+        }
+        // 圆珠笔几乎不受压感影响
+        assertTrue(w(PenType.BALLPOINT, heavy) - w(PenType.BALLPOINT, light) < 3f)
+    }
+
+    @Test
+    fun opacityAndConstantWidthFlags() {
+        assertTrue(PenType.HIGHLIGHTER.opacity < 0.5f)
+        assertTrue(PenType.HIGHLIGHTER.constantWidth)
+        assertTrue(PenType.MARKER.constantWidth)
+        assertEquals(1f, PenType.FOUNTAIN.opacity, 0f)
+        assertTrue(PenType.WRITING.none { it == PenType.HIGHLIGHTER })
+    }
+
+    @Test
+    fun brushTapersAtBothEnds() {
+        val points = (0..20).map { InkPoint(it * 10f, 0f, 1f) }
+        val stroke = Stroke(points = points, width = 10f, pen = PenType.BRUSH)
+        val outline = StrokeGeometry.outline(stroke)
+        val n = points.size
+        // 左侧轮廓第 i 个点的 y 即半宽
+        val startHalf = outline[0].y
+        val midHalf = outline[n / 2].y
+        val endHalf = outline[n - 1].y
+        assertTrue(startHalf < midHalf * 0.5f)
+        assertTrue(endHalf < midHalf * 0.5f)
+        assertEquals(1f, StrokeGeometry.taperFactor(10, 21), 0f)
+    }
+
+    @Test
+    fun centerlineDropsDuplicatePoints() {
+        val s = Stroke(points = listOf(InkPoint(0f, 0f), InkPoint(0f, 0f), InkPoint(5f, 5f)), pen = PenType.MARKER)
+        assertEquals(2, StrokeGeometry.centerline(s).size)
+    }
+
+    @Test
+    fun unionBounds() {
+        val a = Stroke(points = listOf(InkPoint(0f, 0f)), width = 2f)
+        val b = Stroke(points = listOf(InkPoint(50f, 80f)), width = 2f)
+        val u = StrokeGeometry.bounds(listOf(a, b))!!
+        assertEquals(-2f, u[0], 0.001f)
+        assertEquals(82f, u[3], 0.001f)
+        assertEquals(null, StrokeGeometry.bounds(emptyList<Stroke>()))
     }
 }

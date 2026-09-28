@@ -97,4 +97,25 @@ another-key: 123
         assertTrue(merged.contains("> 新识别文字"))
         assertTrue(!merged.contains("> 旧识别文字"))
     }
+
+    @Test
+    fun testBookmarksTextsAndRecordings() {
+        val note = com.adnote.model.Note(
+            id = "n1",
+            title = "t",
+            pages = listOf(
+                com.adnote.model.Page(
+                    width = 10, height = 10, bookmark = "第一章",
+                    texts = listOf(com.adnote.model.TextBox(x = 0f, y = 0f, text = "打字内容\n第二行")),
+                ),
+            ),
+            recordings = listOf(com.adnote.model.Recording(path = "audio/r1.m4a", createdAt = 0, durationMs = 65_000)),
+            createdAt = 0, updatedAt = 0,
+        )
+        val md = MarkdownComposer.generated(note, "_ink/n1")
+        assertTrue(md.contains("## 第 1 页 · 第一章\n"))
+        assertTrue(md.contains("- 打字内容 第二行\n"))
+        assertTrue(md.contains("## 录音\n"))
+        assertTrue(md.contains("![录音 1 · 1:05](_ink/n1/audio/r1.m4a)"))
+    }
 }

@@ -94,3 +94,45 @@ class NoteRepositoryTest {
         assertEquals(n.id, list[0].id)
     }
 }
+
+class NoteRepositoryTrashTest {
+    @get:org.junit.Rule
+    val tmp = org.junit.rules.TemporaryFolder()
+
+    @org.junit.Test
+    fun trashRestoreAndPurge() {
+        val repo = NoteRepository(tmp.root)
+        val note = repo.create("待删", "收件箱", 800, 1200, now = 1000)
+        val synced = note.copy(sync = com.adnote.model.SyncState(lastSyncedAt = 2000, remoteMdPath = "收件箱/待删.md"))
+        repo.save(synced)
+
+        repo.moveToTrash(synced, "收件箱/_ink/${note.id}", now = 5000)
+        org.junit.Assert.assertNull(repo.load(note.id))
+        org.junit.Assert.assertEquals(1, repo.tombstones().size)
+        val trashed = repo.listTrash().single()
+        org.junit.Assert.assertEquals(5000L, trashed.deletedAt)
+
+        val restored = repo.restore(note.id, now = 6000)!!
+        org.junit.Assert.assertTrue(restored.isDirty)
+        org.junit.Assert.assertEquals(0L, restored.sync.lastSyncedAt)
+        org.junit.Assert.assertTrue(repo.tombstones().isEmpty())
+        org.junit.Assert.assertTrue(repo.listTrash().isEmpty())
+
+        repo.moveToTrash(restored, null, now = 0)
+        org.junit.Assert.assertEquals(1, repo.purgeExpired(now = 31L * 24 * 3600_000))
+        org.junit.Assert.assertTrue(repo.listTrash().isEmpty())
+    }
+
+    @org.junit.Test
+    fun assetsCopyBetweenNotes() {
+        val repo = NoteRepository(tmp.root)
+        val a = repo.create("a", "x", 10, 10)
+        val b = repo.create("b", "x", 10, 10)
+        val path = repo.newAssetPath("images", "jpg")
+        repo.assetFile(a.id, path).apply { parentFile.mkdirs() }.writeBytes(byteArrayOf(1, 2, 3))
+        org.junit.Assert.assertEquals(path, repo.copyAsset(a.id, path, a.id))
+        val copied = repo.copyAsset(a.id, path, b.id)
+        org.junit.Assert.assertTrue(copied.startsWith("images/"))
+        org.junit.Assert.assertArrayEquals(byteArrayOf(1, 2, 3), repo.readAsset(b.id, copied))
+    }
+}

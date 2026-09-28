@@ -5,7 +5,7 @@
     android:orientation="vertical"
     android:background="@color/bg_page">
 
-    <!-- 顶部现代化工具栏 -->
+    <!-- 顶栏：返回、标题、翻页与页面管理 -->
     <LinearLayout
         android:id="@+id/toolbar"
         android:layout_width="match_parent"
@@ -15,7 +15,6 @@
         android:paddingHorizontal="12dp"
         android:background="@color/bg_surface">
 
-        <!-- 返回按钮 -->
         <Button
             android:id="@+id/btnBack"
             android:layout_width="36dp"
@@ -23,9 +22,9 @@
             android:background="@drawable/bg_button_secondary"
             android:drawableStart="@drawable/ic_arrow_back"
             android:padding="8dp"
+            android:contentDescription="返回"
             android:stateListAnimator="@null" />
 
-        <!-- 笔记标题 -->
         <TextView
             android:id="@+id/tvNoteTitle"
             android:layout_width="0dp"
@@ -40,7 +39,7 @@
             android:singleLine="true"
             android:ellipsize="end" />
 
-        <!-- 翻页胶囊组件 -->
+        <!-- 翻页胶囊：点页码打开页面概览 -->
         <LinearLayout
             android:layout_width="wrap_content"
             android:layout_height="36dp"
@@ -50,107 +49,297 @@
             android:paddingHorizontal="2dp"
             android:layout_marginEnd="6dp">
 
-            <Button
+            <ImageButton
+                android:padding="7dp"
+                android:scaleType="fitCenter"
                 android:id="@+id/btnPrevPage"
-                android:layout_width="30dp"
+                android:layout_width="32dp"
                 android:layout_height="32dp"
                 android:background="?attr/selectableItemBackgroundBorderless"
-                android:drawableStart="@drawable/ic_chevron_left"
-                android:padding="5dp"
-                android:stateListAnimator="@null" />
+                android:src="@drawable/ic_chevron_left"
+                android:contentDescription="上一页" />
 
             <TextView
                 android:id="@+id/tvPageIndicator"
                 android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
+                android:layout_height="match_parent"
+                android:gravity="center"
+                android:minWidth="44dp"
                 android:text="1 / 1"
                 android:textSize="12sp"
                 android:textColor="@color/text_primary"
-                android:paddingHorizontal="6dp" />
+                android:paddingHorizontal="4dp" />
 
-            <Button
+            <ImageButton
+                android:padding="7dp"
+                android:scaleType="fitCenter"
                 android:id="@+id/btnNextPage"
-                android:layout_width="30dp"
+                android:layout_width="32dp"
                 android:layout_height="32dp"
                 android:background="?attr/selectableItemBackgroundBorderless"
-                android:drawableStart="@drawable/ic_chevron_right"
-                android:padding="5dp"
-                android:stateListAnimator="@null" />
+                android:src="@drawable/ic_chevron_right"
+                android:contentDescription="下一页" />
         </LinearLayout>
 
-        <!-- 添加页按钮 -->
-        <Button
+        <ImageButton
+                android:padding="7dp"
+                android:scaleType="fitCenter"
             android:id="@+id/btnAddPage"
-            android:layout_width="wrap_content"
-            android:layout_height="36dp"
-            android:text="+页"
-            android:textSize="12sp"
-            android:textColor="@color/text_primary"
-            android:background="@drawable/bg_button_secondary"
-            android:paddingHorizontal="8dp"
-            android:stateListAnimator="@null"
-            android:layout_marginEnd="6dp" />
-
-        <!-- 纸张底质模板按钮 -->
-        <Button
-            android:id="@+id/btnPageTemplate"
             android:layout_width="36dp"
             android:layout_height="36dp"
             android:background="@drawable/bg_button_secondary"
-            android:drawableStart="@drawable/ic_paper_template"
-            android:padding="8dp"
-            android:stateListAnimator="@null"
+            android:src="@drawable/ic_add_page"
+            android:contentDescription="在当前页后插入新页"
             android:layout_marginEnd="6dp" />
 
-        <!-- 画笔配置按钮（颜色与粗细） -->
-        <Button
-            android:id="@+id/btnPenSettings"
+        <ImageButton
+                android:padding="7dp"
+                android:scaleType="fitCenter"
+            android:id="@+id/btnPages"
             android:layout_width="36dp"
             android:layout_height="36dp"
             android:background="@drawable/bg_button_secondary"
-            android:drawableStart="@drawable/ic_pen"
-            android:padding="8dp"
-            android:stateListAnimator="@null"
+            android:src="@drawable/ic_pages"
+            android:contentDescription="页面概览"
             android:layout_marginEnd="6dp" />
 
-        <!-- 撤销按钮 -->
-        <Button
-            android:id="@+id/btnUndo"
-            android:layout_width="36dp"
-            android:layout_height="36dp"
-            android:background="@drawable/bg_button_secondary"
-            android:drawableStart="@drawable/ic_undo"
-            android:padding="8dp"
-            android:stateListAnimator="@null"
-            android:layout_marginEnd="6dp" />
-
-        <!-- 识别按钮 -->
-        <Button
+        <ImageButton
+                android:padding="7dp"
+                android:scaleType="fitCenter"
             android:id="@+id/btnRecognize"
-            android:layout_width="wrap_content"
+            android:layout_width="36dp"
             android:layout_height="36dp"
-            android:text="识别"
-            android:textSize="12sp"
-            android:textColor="@color/text_primary"
             android:background="@drawable/bg_button_secondary"
-            android:drawableStart="@drawable/ic_recognize"
-            android:drawablePadding="2dp"
-            android:paddingHorizontal="8dp"
-            android:stateListAnimator="@null"
+            android:src="@drawable/ic_recognize"
+            android:contentDescription="识别手写"
             android:layout_marginEnd="6dp" />
 
-        <!-- 全刷按钮 -->
-        <Button
+        <ImageButton
+                android:padding="7dp"
+                android:scaleType="fitCenter"
             android:id="@+id/btnRefresh"
             android:layout_width="36dp"
             android:layout_height="36dp"
             android:background="@drawable/bg_button_secondary"
-            android:drawableStart="@drawable/ic_refresh_full"
-            android:padding="8dp"
-            android:stateListAnimator="@null" />
+            android:src="@drawable/ic_refresh_full"
+            android:contentDescription="全刷清残影"
+            android:layout_marginEnd="6dp" />
+
+        <ImageButton
+                android:padding="7dp"
+                android:scaleType="fitCenter"
+            android:id="@+id/btnMore"
+            android:layout_width="36dp"
+            android:layout_height="36dp"
+            android:background="@drawable/bg_button_secondary"
+            android:src="@drawable/ic_more_vert"
+            android:contentDescription="更多" />
     </LinearLayout>
 
-    <!-- 极细分隔线 -->
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:background="@color/border_hairline" />
+
+    <!-- 工具栏：笔、荧光笔、橡皮、套索、快捷色、撤销重做、底纹 -->
+    <HorizontalScrollView
+        android:layout_width="match_parent"
+        android:layout_height="50dp"
+        android:background="@color/bg_surface"
+        android:scrollbars="none">
+
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="match_parent"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:paddingHorizontal="12dp">
+
+            <ImageButton
+                android:id="@+id/btnToolPen"
+                android:layout_width="40dp"
+                android:layout_height="36dp"
+                android:background="@drawable/bg_button_secondary"
+                android:src="@drawable/ic_pen"
+                android:padding="7dp"
+                android:scaleType="fitCenter"
+                android:contentDescription="笔（再点一次打开设置）"
+                android:layout_marginEnd="6dp" />
+
+            <ImageButton
+                android:id="@+id/btnToolHighlighter"
+                android:layout_width="40dp"
+                android:layout_height="36dp"
+                android:background="@drawable/bg_button_secondary"
+                android:src="@drawable/ic_highlighter"
+                android:padding="7dp"
+                android:scaleType="fitCenter"
+                android:contentDescription="荧光笔"
+                android:layout_marginEnd="6dp" />
+
+            <ImageButton
+                android:id="@+id/btnToolEraser"
+                android:layout_width="40dp"
+                android:layout_height="36dp"
+                android:background="@drawable/bg_button_secondary"
+                android:src="@drawable/ic_eraser"
+                android:padding="7dp"
+                android:scaleType="fitCenter"
+                android:contentDescription="橡皮擦"
+                android:layout_marginEnd="6dp" />
+
+            <ImageButton
+                android:id="@+id/btnToolLasso"
+                android:layout_width="40dp"
+                android:layout_height="36dp"
+                android:background="@drawable/bg_button_secondary"
+                android:src="@drawable/ic_lasso"
+                android:padding="7dp"
+                android:scaleType="fitCenter"
+                android:contentDescription="套索选择"
+                android:layout_marginEnd="6dp" />
+
+            <ImageButton
+                android:id="@+id/btnToolShape"
+                android:layout_width="40dp"
+                android:layout_height="36dp"
+                android:background="@drawable/bg_button_secondary"
+                android:src="@drawable/ic_shape"
+                android:padding="7dp"
+                android:scaleType="fitCenter"
+                android:contentDescription="形状（画完自动规整）"
+                android:layout_marginEnd="6dp" />
+
+            <ImageButton
+                android:id="@+id/btnToolText"
+                android:layout_width="40dp"
+                android:layout_height="36dp"
+                android:background="@drawable/bg_button_secondary"
+                android:src="@drawable/ic_text"
+                android:padding="7dp"
+                android:scaleType="fitCenter"
+                android:contentDescription="文字框" />
+
+            <View
+                android:layout_width="1dp"
+                android:layout_height="24dp"
+                android:layout_marginHorizontal="10dp"
+                android:background="@color/border_hairline" />
+
+            <!-- 当前工具的快捷色板（橡皮/套索时隐藏） -->
+            <LinearLayout
+                android:id="@+id/layoutQuickColors"
+                android:layout_width="wrap_content"
+                android:layout_height="match_parent"
+                android:orientation="horizontal"
+                android:gravity="center_vertical" />
+
+            <TextView
+                android:id="@+id/tvToolHint"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:textSize="12sp"
+                android:textColor="@color/text_secondary"
+                android:visibility="gone" />
+
+            <View
+                android:layout_width="1dp"
+                android:layout_height="24dp"
+                android:layout_marginHorizontal="10dp"
+                android:background="@color/border_hairline" />
+
+            <ImageButton
+                android:padding="7dp"
+                android:scaleType="fitCenter"
+                android:id="@+id/btnUndo"
+                android:layout_width="40dp"
+                android:layout_height="36dp"
+                android:background="@drawable/bg_button_secondary"
+                android:src="@drawable/ic_undo"
+                android:contentDescription="撤销"
+                android:layout_marginEnd="6dp" />
+
+            <ImageButton
+                android:padding="7dp"
+                android:scaleType="fitCenter"
+                android:id="@+id/btnRedo"
+                android:layout_width="40dp"
+                android:layout_height="36dp"
+                android:background="@drawable/bg_button_secondary"
+                android:src="@drawable/ic_redo"
+                android:contentDescription="重做" />
+
+            <View
+                android:layout_width="1dp"
+                android:layout_height="24dp"
+                android:layout_marginHorizontal="10dp"
+                android:background="@color/border_hairline" />
+
+
+            <ImageButton
+                android:id="@+id/btnRuler"
+                android:layout_width="40dp"
+                android:layout_height="36dp"
+                android:background="@drawable/bg_button_secondary"
+                android:src="@drawable/ic_ruler"
+                android:padding="7dp"
+                android:scaleType="fitCenter"
+                android:contentDescription="直尺"
+                android:layout_marginEnd="6dp" />
+
+            <ImageButton
+                android:id="@+id/btnInsertImage"
+                android:layout_width="40dp"
+                android:layout_height="36dp"
+                android:background="@drawable/bg_button_secondary"
+                android:src="@drawable/ic_image"
+                android:padding="7dp"
+                android:scaleType="fitCenter"
+                android:contentDescription="插入图片"
+                android:layout_marginEnd="6dp" />
+
+            <ImageButton
+                android:id="@+id/btnLayers"
+                android:layout_width="40dp"
+                android:layout_height="36dp"
+                android:background="@drawable/bg_button_secondary"
+                android:src="@drawable/ic_layers"
+                android:padding="7dp"
+                android:scaleType="fitCenter"
+                android:contentDescription="图层"
+                android:layout_marginEnd="6dp" />
+
+            <ImageButton
+                android:id="@+id/btnRecord"
+                android:layout_width="40dp"
+                android:layout_height="36dp"
+                android:background="@drawable/bg_button_secondary"
+                android:src="@drawable/ic_mic"
+                android:padding="7dp"
+                android:scaleType="fitCenter"
+                android:contentDescription="录音" />
+
+            <View
+                android:layout_width="1dp"
+                android:layout_height="24dp"
+                android:layout_marginHorizontal="10dp"
+                android:background="@color/border_hairline" />
+            <Button
+                android:id="@+id/btnPageTemplate"
+                android:layout_width="wrap_content"
+                android:layout_height="36dp"
+                android:text="底纹"
+                android:textSize="12sp"
+                android:textColor="@color/text_primary"
+                android:background="@drawable/bg_button_secondary"
+                android:drawableStart="@drawable/ic_paper_template"
+                android:drawablePadding="4dp"
+                android:paddingHorizontal="10dp"
+                android:minWidth="0dp"
+                android:stateListAnimator="@null" />
+        </LinearLayout>
+    </HorizontalScrollView>
+
     <View
         android:layout_width="match_parent"
         android:layout_height="1dp"
@@ -166,6 +355,85 @@
             android:id="@+id/inkCanvas"
             android:layout_width="match_parent"
             android:layout_height="match_parent" />
+
+        <!-- 套索选区操作条 -->
+        <HorizontalScrollView
+            android:id="@+id/layoutSelectionBar"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="top|center_horizontal"
+            android:layout_marginTop="12dp"
+            android:layout_marginHorizontal="12dp"
+            android:scrollbars="none"
+            android:background="@drawable/bg_selection_bar"
+            android:visibility="gone">
+
+            <LinearLayout
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:padding="6dp">
+
+                <TextView
+                    android:id="@+id/tvSelectionInfo"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:textSize="12sp"
+                    android:textColor="@color/text_secondary"
+                    android:paddingHorizontal="8dp" />
+
+                <Button android:id="@+id/btnSelCut" style="@style/SelectionAction" android:text="剪切" />
+                <Button android:id="@+id/btnSelCopy" style="@style/SelectionAction" android:text="拷贝" />
+                <Button android:id="@+id/btnSelDuplicate" style="@style/SelectionAction" android:text="复制一份" />
+                <Button android:id="@+id/btnSelDelete" style="@style/SelectionAction" android:text="删除" />
+                <Button android:id="@+id/btnSelColor" style="@style/SelectionAction" android:text="改色" />
+                <Button android:id="@+id/btnSelToText" style="@style/SelectionAction" android:text="转文字" />
+                <Button android:id="@+id/btnSelLayer" style="@style/SelectionAction" android:text="移到图层" />
+                <Button android:id="@+id/btnSelDone" style="@style/SelectionAction" android:text="完成" />
+            </LinearLayout>
+        </HorizontalScrollView>
+
+        <!-- 录音中提示条 -->
+        <LinearLayout
+            android:id="@+id/layoutRecordingBar"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="top|end"
+            android:layout_marginTop="12dp"
+            android:layout_marginEnd="12dp"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:padding="6dp"
+            android:background="@drawable/bg_selection_bar"
+            android:visibility="gone">
+
+            <TextView
+                android:id="@+id/tvRecordingTime"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="● 录音中 0:00"
+                android:textSize="13sp"
+                android:textStyle="bold"
+                android:textColor="#DC2626"
+                android:paddingHorizontal="8dp" />
+
+            <Button android:id="@+id/btnStopRecording" style="@style/SelectionAction" android:text="停止" />
+        </LinearLayout>
+
+        <!-- 缩放比例，点按复位 -->
+        <TextView
+            android:id="@+id/tvZoom"
+            android:layout_width="wrap_content"
+            android:layout_height="32dp"
+            android:layout_gravity="bottom|start"
+            android:layout_margin="12dp"
+            android:gravity="center"
+            android:paddingHorizontal="12dp"
+            android:textSize="12sp"
+            android:textColor="@color/text_primary"
+            android:background="@drawable/bg_selection_bar"
+            android:visibility="gone" />
 
         <!-- 底部浮动识别结果面板 -->
         <LinearLayout

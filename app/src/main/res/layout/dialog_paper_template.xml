@@ -60,6 +60,42 @@
             android:orientation="horizontal" />
     </HorizontalScrollView>
 
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="自定义背景（图片或 PDF 第一页，铺满页面）"
+        android:textSize="12sp"
+        android:textStyle="bold"
+        android:textColor="@color/text_secondary"
+        android:layout_marginBottom="8dp" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:layout_marginBottom="16dp">
+
+        <Button
+            android:id="@+id/btnCustomBackground"
+            style="@style/SelectionAction"
+            android:layout_marginStart="0dp"
+            android:text="选择背景…" />
+
+        <Button
+            android:id="@+id/btnClearBackground"
+            style="@style/SelectionAction"
+            android:text="清除背景" />
+
+        <TextView
+            android:id="@+id/tvBackgroundState"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="8dp"
+            android:textSize="12sp"
+            android:textColor="@color/text_tertiary" />
+    </LinearLayout>
+
     <CheckBox
         android:id="@+id/cbApplyToAllPages"
         android:layout_width="match_parent"

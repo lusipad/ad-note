@@ -67,12 +67,29 @@ object MarkdownComposer {
         append(BEGIN).append('\n')
         note.pages.forEachIndexed { i, page ->
             val n = i + 1
-            append("## 第 ").append(n).append(" 页\n\n")
+            append("## 第 ").append(n).append(" 页")
+            page.bookmark?.let { append(" · ").append(it) }
+            append("\n\n")
             append("![第 ").append(n).append(" 页](").append(inkDir).append('/').append(pageFileName(i)).append(")\n")
             val text = page.recognizedText?.trim()
             if (!text.isNullOrEmpty()) {
                 append('\n')
                 text.lines().forEach { append("> ").append(it).append('\n') }
+            }
+            val typed = page.texts.map { it.text.trim() }.filter { it.isNotEmpty() }
+            if (typed.isNotEmpty()) {
+                append('\n')
+                typed.forEach { t -> append("- ").append(t.replace("\n", " ")).append('\n') }
+            }
+            append('\n')
+        }
+        if (note.recordings.isNotEmpty()) {
+            append("## 录音\n\n")
+            note.recordings.forEachIndexed { i, r ->
+                val secs = r.durationMs / 1000
+                append("![录音 ").append(i + 1).append(" · ")
+                append("%d:%02d".format(secs / 60, secs % 60)).append("](")
+                append(inkDir).append('/').append(r.path).append(")\n")
             }
             append('\n')
         }

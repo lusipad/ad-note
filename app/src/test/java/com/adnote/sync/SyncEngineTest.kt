@@ -194,4 +194,60 @@ tags: [Obsidian新标签1, 标签2]
         // Tags should have been updated from remote Obsidian markdown!
         assertEquals(listOf("Obsidian新标签1", "标签2"), synced!!.tags)
     }
+
+    @Test
+    fun testSyncDeletesStalePageSvgs() {
+        val deletedPaths = ArrayList<String>()
+        server.dispatcher = object : Dispatcher() {
+            override fun dispatch(request: RecordedRequest): MockResponse {
+                val path = java.net.URLDecoder.decode(request.path.orEmpty(), "UTF-8")
+                return when (request.method) {
+                    "GET" -> MockResponse().setResponseCode(404)
+                    "DELETE" -> { deletedPaths.add(path); MockResponse().setResponseCode(204) }
+                    else -> MockResponse().setResponseCode(201).setHeader("ETag", "\"e\"")
+                }
+            }
+        }
+
+        // 上次同步了 3 页，本地删到只剩 1 页
+        val created = repository.create("删页", "收件箱", 800, 1200)
+        val note = created.copy(
+            updatedAt = created.updatedAt + 10,
+            sync = SyncState(lastSyncedAt = created.updatedAt, remoteMdPath = "收件箱/删页.md", remotePageCount = 3),
+        )
+        repository.save(note)
+
+        val result = syncEngine.sync()
+        assertEquals(1, result.success)
+        assertEquals(2, deletedPaths.size)
+        assertTrue(deletedPaths.any { it.endsWith("/_ink/${note.id}/page-002.svg") })
+        assertTrue(deletedPaths.any { it.endsWith("/_ink/${note.id}/page-003.svg") })
+        assertEquals(1, repository.load(note.id)!!.sync.remotePageCount)
+    }
+
+    @Test
+    fun testRecordingsUploadOnce() {
+        val puts = ArrayList<String>()
+        server.dispatcher = object : Dispatcher() {
+            override fun dispatch(request: RecordedRequest): MockResponse {
+                val path = java.net.URLDecoder.decode(request.path.orEmpty(), "UTF-8")
+                if (request.method == "PUT") puts += path
+                return when (request.method) {
+                    "GET" -> MockResponse().setResponseCode(404)
+                    else -> MockResponse().setResponseCode(201)
+                }
+            }
+        }
+        val created = repository.create("录音笔记", "收件箱", 800, 1200)
+        repository.assetFile(created.id, "audio/r1.m4a").apply { parentFile.mkdirs() }.writeBytes(ByteArray(16))
+        repository.save(created.copy(recordings = listOf(com.adnote.model.Recording(id = "r1", path = "audio/r1.m4a", createdAt = 0, durationMs = 1000))))
+
+        syncEngine.sync()
+        assertEquals(1, puts.count { it.endsWith("/audio/r1.m4a") })
+        assertEquals(listOf("r1"), repository.load(created.id)!!.sync.uploadedRecordings)
+
+        puts.clear()
+        syncEngine.sync(force = true)
+        assertEquals(0, puts.count { it.endsWith(".m4a") })
+    }
 }
