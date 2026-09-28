@@ -464,22 +464,29 @@ class EditorActivity : AppCompatActivity() {
         val writing = tools.tool == Tool.PEN || tools.tool == Tool.HIGHLIGHTER || tools.tool == Tool.SHAPE
         val eraser = tools.tool == Tool.ERASER
         val scale = inkCanvas.viewport.scale
+        val page = note.pages.getOrNull(currentPageIndex)
+        // PDF 原文或自定义背景图上，纯色轨迹会盖住底图，不能用来预览擦除
+        val plainPaper = page != null && !note.isPdf && page.backgroundImage == null
         runCatching {
-            if (eraser) {
+            if (eraser && plainPaper) {
                 // 橡皮：让硬件直绘层画一条纸色的粗线，宽度等于橡皮直径，擦过的地方立刻「变白」，
                 // 抬笔后再按真实擦除结果刷新。否则文石固件会用当前笔型画一条细墨线，看起来像在写字
-                val paper = note.pages.getOrNull(currentPageIndex)?.backgroundColor ?: PaperPresets.WHITE.hex
                 input.setPenStyle(PenType.MARKER)
-                input.setStrokeColor(StrokePainter.parseColor(PaperPresets.find(paper).hex))
+                input.setStrokeColor(StrokePainter.parseColor(PaperPresets.find(page!!.backgroundColor).hex))
                 input.setStrokeWidth(tools.eraserSize.radius * 2f * scale)
+            } else if (eraser) {
+                // 有底图的页面关闭直绘；万一固件不支持关闭，也只画一条不遮挡内容的细灰线
+                input.setPenStyle(PenType.PENCIL)
+                input.setStrokeColor(StrokePainter.parseColor(ERASER_GUIDE_COLOR))
+                input.setStrokeWidth(2f * scale)
             } else {
                 input.setPenStyle(tools.activePen)
                 input.setStrokeColor(StrokePainter.parseColor(tools.activeColor))
                 // 直绘层按屏幕像素画，需要乘上当前缩放
                 input.setStrokeWidth(tools.activeWidth * scale)
             }
-            // 普通书写、形状、橡皮由硬件直绘；荧光笔（半透明）、套索与文字由应用自己绘制
-            input.setRenderEnabled(tools.tool == Tool.PEN || tools.tool == Tool.SHAPE || eraser)
+            // 普通书写、形状、纯色纸上的橡皮由硬件直绘；荧光笔（半透明）、套索与文字由应用自己绘制
+            input.setRenderEnabled(tools.tool == Tool.PEN || tools.tool == Tool.SHAPE || (eraser && plainPaper))
             input.setPredictionEnabled(writing)
         }
     }
@@ -1923,6 +1930,7 @@ class EditorActivity : AppCompatActivity() {
         private const val EXTRA_NOTE_ID = "extra_note_id"
         private const val SAVE_DELAY_MS = 1500L
         private val TEXT_SIZES = listOf(24f, 32f, 40f, 56f, 72f, 96f)
+        private const val ERASER_GUIDE_COLOR = "#9CA3AF"
 
         private const val MENU_INSERT = 1
         private const val MENU_DUPLICATE = 2
