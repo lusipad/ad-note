@@ -16,12 +16,16 @@ enum class EraserMode(val displayName: String) {
     STROKE("整笔擦除"),
 }
 
-/** 橡皮尺寸档位，radius 为页面像素半径。 */
-@Serializable
-enum class EraserSize(val displayName: String, val radius: Float) {
-    SMALL("小", 8f),
-    MEDIUM("中", 18f),
-    LARGE("大", 36f),
+/** 橡皮大小：页面像素半径。工具栏给出几档预设，设置里可以连续调节。 */
+object EraserSizes {
+    const val MIN = 4f
+    const val MAX = 80f
+    const val DEFAULT = 18f
+
+    /** 工具栏上的预设档位（半径）。 */
+    val PRESETS = listOf(6f, 12f, 18f, 30f, 48f)
+
+    fun clamp(radius: Float): Float = radius.coerceIn(MIN, MAX)
 }
 
 /**
@@ -37,7 +41,8 @@ data class ToolState(
     val highlighterColor: String = PenPresets.HIGHLIGHTERS.first().hex,
     val highlighterWidth: Float = PenPresets.HIGHLIGHTER_WIDTH,
     val eraserMode: EraserMode = EraserMode.PARTIAL,
-    val eraserSize: EraserSize = EraserSize.MEDIUM,
+    /** 橡皮半径（页面像素）。 */
+    val eraserRadius: Float = EraserSizes.DEFAULT,
     /** 文字工具的字号（页面像素）与颜色。 */
     val textSize: Float = 40f,
     val textColor: String = PenPresets.BLACK.hex,

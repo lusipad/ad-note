@@ -24,7 +24,14 @@ class StrokePainter {
         strokeJoin = Paint.Join.ROUND
         isAntiAlias = true
     }
-    private val path = Path()
+
+    /**
+     * 每条笔画的轮廓路径缓存。整页重画（翻页、撤销、抬笔后刷新）时不必每次都重新计算全部笔画的轮廓，
+     * 笔迹多的页面在墨水屏设备较弱的处理器上差别明显。笔画是不可变的，按 id 查、再核对是同一个对象。
+     */
+    private val pathCache = object : LinkedHashMap<String, Pair<Stroke, Path>>(256, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Pair<Stroke, Path>>?) = size > MAX_CACHED_PATHS
+    }
 
     fun drawAll(canvas: Canvas, strokes: List<Stroke>) {
         for (s in strokes) draw(canvas, s)
@@ -36,29 +43,47 @@ class StrokePainter {
         val alpha = (stroke.pen.opacity * 255).toInt().coerceIn(0, 255)
 
         if (stroke.pen.constantWidth && stroke.points.size > 1) {
-            val line = StrokeGeometry.centerline(stroke)
-            path.reset()
-            path.moveTo(line[0].x, line[0].y)
-            for (i in 1 until line.size) path.lineTo(line[i].x, line[i].y)
             linePaint.color = color
             linePaint.alpha = alpha
             linePaint.strokeWidth = stroke.width
-            canvas.drawPath(path, linePaint)
+            canvas.drawPath(cachedPath(stroke) ?: return, linePaint)
             return
         }
 
         fillPaint.color = color
         fillPaint.alpha = alpha
-        val outline = StrokeGeometry.outline(stroke)
-        if (outline.isNotEmpty()) {
-            path.reset()
-            path.moveTo(outline[0].x, outline[0].y)
-            for (i in 1 until outline.size) path.lineTo(outline[i].x, outline[i].y)
-            path.close()
-            canvas.drawPath(path, fillPaint)
+        val outline = cachedPath(stroke)
+        if (outline != null) {
+            canvas.drawPath(outline, fillPaint)
         } else {
             val pt = stroke.points[0]
             canvas.drawCircle(pt.x, pt.y, StrokeGeometry.dotRadius(stroke), fillPaint)
+        }
+    }
+
+    /** 等宽笔返回中心折线，其余返回轮廓多边形；单点笔画返回 null（画成圆点）。 */
+    private fun cachedPath(stroke: Stroke): Path? {
+        pathCache[stroke.id]?.let { (s, p) -> if (s === stroke) return p }
+        val p = buildPath(stroke) ?: return null
+        pathCache[stroke.id] = stroke to p
+        return p
+    }
+
+    private fun buildPath(stroke: Stroke): Path? {
+        if (stroke.pen.constantWidth) {
+            val line = StrokeGeometry.centerline(stroke)
+            if (line.size < 2) return null
+            return Path().apply {
+                moveTo(line[0].x, line[0].y)
+                for (i in 1 until line.size) lineTo(line[i].x, line[i].y)
+            }
+        }
+        val outline = StrokeGeometry.outline(stroke)
+        if (outline.isEmpty()) return null
+        return Path().apply {
+            moveTo(outline[0].x, outline[0].y)
+            for (i in 1 until outline.size) lineTo(outline[i].x, outline[i].y)
+            close()
         }
     }
 
@@ -71,6 +96,8 @@ class StrokePainter {
     }
 
     companion object {
+        private const val MAX_CACHED_PATHS = 8_000
+
         fun parseColor(hex: String?): Int {
             if (hex.isNullOrBlank()) return Color.BLACK
             return try {

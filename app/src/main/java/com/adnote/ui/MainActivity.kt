@@ -21,6 +21,7 @@ import androidx.recyclerview.widget.RecyclerView
 import com.adnote.R
 import com.adnote.export.RemotePaths
 import com.adnote.model.Note
+import com.adnote.storage.NoteSummary
 import com.adnote.model.PageTemplate
 import com.adnote.model.PaperPresets
 import com.adnote.model.PinLock
@@ -54,12 +55,20 @@ class MainActivity : AppCompatActivity() {
     }
 
     private val noteAdapter = NoteAdapter(
-        onItemClick = { note -> openNote(note) },
-        onItemLongClick = { note -> showNoteActions(note) }
+        onItemClick = { item -> openNote(item) },
+        // 长按操作要改笔记本身（封面、锁、删除），这时才读取整篇笔记
+        onItemLongClick = { item -> AdNoteApp.instance.repository.load(item.id)?.let(::showNoteActions) }
     )
 
     private var selectedFolder: String? = null
     private var selectedTag: String? = null
+
+    /** 在后台读好的全部笔记；筛选、搜索都在这份列表上做，不再每按一个键就把所有笔记读一遍。 */
+    private var allNotes: List<NoteSummary> = emptyList()
+    private var trashCount = 0
+    private var loaded = false
+    private var reloadJob: kotlinx.coroutines.Job? = null
+    private var syncing = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -91,7 +100,7 @@ class MainActivity : AppCompatActivity() {
         EditorActivity.start(this, created.id)
     }
 
-    private fun openNote(note: Note) {
+    private fun openNote(note: NoteSummary) {
         if (!note.isLocked) {
             EditorActivity.start(this, note.id)
             return
@@ -146,7 +155,7 @@ class MainActivity : AppCompatActivity() {
             .setItems(names.toTypedArray()) { _, which ->
                 val color = if (which == 0) null else COVER_COLORS[which - 1].first
                 AdNoteApp.instance.repository.save(note.copy(coverColor = color))
-                refreshNotes()
+                reload()
             }
             .show()
     }
@@ -165,7 +174,7 @@ class MainActivity : AppCompatActivity() {
                 }
                 else -> Toast.makeText(this, "PIN 需为 4–12 位数字", Toast.LENGTH_SHORT).show()
             }
-            refreshNotes()
+            reload()
         }
     }
 
@@ -186,13 +195,12 @@ class MainActivity : AppCompatActivity() {
                     .setTitle(item.note.title)
                     .setPositiveButton("恢复") { _, _ ->
                         repo.restore(item.note.id)
-                        refreshNotes()
-                        refreshFilters()
+                        reload()
                         Toast.makeText(this, "已恢复，下次同步会重新上传", Toast.LENGTH_SHORT).show()
                     }
                     .setNeutralButton("彻底删除") { _, _ ->
                         repo.purge(item.note.id)
-                        refreshFilters()
+                        reload()
                     }
                     .setNegativeButton("取消", null)
                     .show()
@@ -203,7 +211,7 @@ class MainActivity : AppCompatActivity() {
                     .setMessage("${trashed.size} 篇笔记将被永久删除，无法恢复。")
                     .setPositiveButton("清空") { _, _ ->
                         trashed.forEach { repo.purge(it.note.id) }
-                        refreshFilters()
+                        reload()
                     }
                     .setNegativeButton("取消", null)
                     .show()
@@ -214,8 +222,21 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
-        refreshNotes()
-        refreshFilters()
+        reload()
+    }
+
+    /** 在后台重新读取全部笔记（打开的笔记还没写完的保存也会读到最新版本），然后刷新列表和筛选条。 */
+    private fun reload() {
+        reloadJob?.cancel()
+        reloadJob = lifecycleScope.launch {
+            val repo = AdNoteApp.instance.repository
+            val (notes, trash) = withContext(Dispatchers.IO) { repo.summaries() to repo.trashCount() }
+            allNotes = notes
+            trashCount = trash
+            loaded = true
+            refreshNotes()
+            refreshFilters()
+        }
     }
 
     private fun initViews() {
@@ -271,13 +292,10 @@ class MainActivity : AppCompatActivity() {
 
     private fun refreshNotes() {
         val query = etSearch.text.toString().trim()
-        val list = AdNoteApp.instance.repository.search(
-            query = query,
-            tag = selectedTag,
-            folder = selectedFolder
-        )
+        val list = NoteSummary.filter(allNotes, query = query, tag = selectedTag, folder = selectedFolder)
         noteAdapter.submitList(list)
-        layoutEmpty.visibility = if (list.isEmpty()) View.VISIBLE else View.GONE
+        // 第一次读完之前不显示「还没有笔记」
+        layoutEmpty.visibility = if (loaded && list.isEmpty()) View.VISIBLE else View.GONE
     }
 
     private fun refreshFilters() {
@@ -294,7 +312,7 @@ class MainActivity : AppCompatActivity() {
         layoutFilters.addView(btnAll)
 
         // 文件夹按钮
-        val folders = AdNoteApp.instance.repository.allFolders()
+        val folders = NoteSummary.foldersOf(allNotes)
         for (folder in folders) {
             val isSelected = selectedFolder == folder
             val btn = createFilterButton("📁 $folder", isSelected) {
@@ -307,7 +325,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         // 标签按钮
-        val tags = AdNoteApp.instance.repository.allTags()
+        val tags = NoteSummary.tagsOf(allNotes)
         for (tag in tags) {
             val isSelected = selectedTag == tag
             val btn = createFilterButton("#$tag", isSelected) {
@@ -319,7 +337,6 @@ class MainActivity : AppCompatActivity() {
             layoutFilters.addView(btn)
         }
 
-        val trashCount = AdNoteApp.instance.repository.listTrash().size
         if (trashCount > 0) {
             layoutFilters.addView(createFilterButton("🗑 回收站 ($trashCount)", false) { showTrashDialog() })
         }
@@ -406,8 +423,7 @@ class MainActivity : AppCompatActivity() {
             .setPositiveButton("移到回收站") { _, _ ->
                 val inkDir = RemotePaths.inkDir(note)
                 AdNoteApp.instance.repository.moveToTrash(note, inkDir)
-                refreshNotes()
-                refreshFilters()
+                reload()
                 Toast.makeText(this, "已移到回收站", Toast.LENGTH_SHORT).show()
             }
             .setNegativeButton("取消", null)
@@ -428,10 +444,17 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
+        if (syncing) {
+            Toast.makeText(this, "正在同步，请稍候", Toast.LENGTH_SHORT).show()
+            return
+        }
+        syncing = true
         Toast.makeText(this, "正在同步中...", Toast.LENGTH_SHORT).show()
         lifecycleScope.launch {
-            val result = withContext(Dispatchers.IO) {
-                engine.sync()
+            val result = try {
+                withContext(Dispatchers.IO) { engine.sync() }
+            } finally {
+                syncing = false
             }
             val msg = if (result.failed == 0) {
                 "同步完成：成功 ${result.success} 篇笔记"
@@ -439,7 +462,7 @@ class MainActivity : AppCompatActivity() {
                 "同步完成：成功 ${result.success}，失败 ${result.failed}\n错误: ${result.firstError}"
             }
             Toast.makeText(this@MainActivity, msg, Toast.LENGTH_LONG).show()
-            refreshNotes()
+            reload()
         }
     }
 
@@ -456,8 +479,7 @@ class MainActivity : AppCompatActivity() {
             }
             if (result.isSuccess) {
                 val note = result.getOrThrow()
-                refreshNotes()
-                refreshFilters()
+                reload()
                 Toast.makeText(this@MainActivity, "PDF 导入成功，共 ${note.pages.size} 页", Toast.LENGTH_SHORT).show()
                 EditorActivity.start(this@MainActivity, note.id)
             } else {
@@ -478,14 +500,14 @@ private val COVER_COLORS = listOf(
 )
 
 class NoteAdapter(
-    private val onItemClick: (Note) -> Unit,
-    private val onItemLongClick: (Note) -> Unit,
+    private val onItemClick: (NoteSummary) -> Unit,
+    private val onItemLongClick: (NoteSummary) -> Unit,
 ) : RecyclerView.Adapter<NoteAdapter.ViewHolder>() {
 
-    private var items: List<Note> = emptyList()
+    private var items: List<NoteSummary> = emptyList()
     private val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault())
 
-    fun submitList(list: List<Note>) {
+    fun submitList(list: List<NoteSummary>) {
         items = list
         notifyDataSetChanged()
     }
@@ -512,17 +534,17 @@ class NoteAdapter(
         private val tvTags: TextView = view.findViewById(R.id.tvTags)
         private val viewCover: View = view.findViewById(R.id.viewCover)
 
-        fun bind(note: Note) {
+        fun bind(note: NoteSummary) {
             tvTitle.text = if (note.isLocked) "🔒 ${note.title}" else note.title
             val cover = note.coverColor
             viewCover.visibility = if (cover != null) View.VISIBLE else View.GONE
             if (cover != null) viewCover.setBackgroundColor(StrokePainter.parseColor(cover))
             tvPdfBadge.visibility = if (note.isPdf) View.VISIBLE else View.GONE
             tvFolder.text = note.folder
-            tvPageCount.text = "${note.pages.size} 页"
+            tvPageCount.text = "${note.pageCount} 页"
             tvDate.text = dateFormat.format(Date(note.updatedAt))
 
-            if (note.isDirty || note.sync.lastSyncedAt == 0L) {
+            if (note.isDirty) {
                 tvSyncBadge.visibility = View.VISIBLE
                 tvSyncBadge.text = "● 待同步"
             } else {

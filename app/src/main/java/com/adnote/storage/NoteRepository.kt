@@ -6,6 +6,9 @@ import com.adnote.model.NoteJson
 import com.adnote.model.Page
 import kotlinx.serialization.Serializable
 import java.io.File
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 import java.util.logging.Logger
 
 /** 回收站里的笔记。 */
@@ -26,12 +29,35 @@ class NoteRepository(private val root: File) {
     private val trashDir = File(root, "trash").apply { mkdirs() }
     private val log = Logger.getLogger("NoteRepository")
 
+    /** 写文件的锁：编辑器的后台保存与同步线程可能同时保存同一篇笔记。 */
+    private val writeLock = Any()
+
+    /**
+     * 后台保存队列。整本笔记序列化成 JSON 可能要几百毫秒，放在界面线程会卡住书写。
+     * 还没写到磁盘的最新版本放在 [pending] 里，[load]、[list] 优先返回它，读到的永远是最新内容。
+     */
+    private val writer = Executors.newSingleThreadExecutor { r -> Thread(r, "note-writer").apply { isDaemon = true } }
+    private val pending = ConcurrentHashMap<String, Note>()
+
+    /**
+     * 本进程里写过的最新同步状态。编辑器打开笔记后内存里拿的是旧的同步状态，
+     * 同步在这期间完成的话，编辑器下次保存会把它改回去（导致重复上传、远端标签被当成外部修改）。
+     * 保存时同步状态只进不退。
+     */
+    private val syncStates = ConcurrentHashMap<String, com.adnote.model.SyncState>()
+
+    private fun withLatestSync(note: Note): Note {
+        val known = syncStates[note.id] ?: return note
+        return if (known.lastSyncedAt > note.sync.lastSyncedAt) note.copy(sync = known) else note
+    }
+
     fun list(): List<Note> =
         notesDir.listFiles().orEmpty()
             .mapNotNull { dir -> load(dir.name) }
             .sortedByDescending { it.updatedAt }
 
     fun load(id: String): Note? {
+        pending[id]?.let { return it }
         val f = File(notesDir, "$id/note.json")
         if (!f.exists()) return null
         return try {
@@ -43,9 +69,61 @@ class NoteRepository(private val root: File) {
         }
     }
 
+    /** 立即写入磁盘（在调用线程上）。 */
     fun save(note: Note) {
-        val dir = File(notesDir, note.id).apply { mkdirs() }
-        atomicWrite(File(dir, "note.json"), NoteJson.encodeToString(Note.serializer(), note))
+        synchronized(writeLock) {
+            val n = withLatestSync(note)
+            val dir = File(notesDir, n.id).apply { mkdirs() }
+            atomicWrite(File(dir, "note.json"), NoteJson.encodeToString(Note.serializer(), n))
+            syncStates[n.id] = n.sync
+            writeSummary(dir, NoteSummary.of(n))
+        }
+    }
+
+    /**
+     * 全部笔记的列表信息，按修改时间倒序。优先读每篇笔记旁的 meta.json；
+     * 没有或比笔记旧（旧版本写的笔记、别处改过）时解析一次笔记并补写。
+     */
+    fun summaries(): List<NoteSummary> =
+        notesDir.listFiles().orEmpty().mapNotNull { dir ->
+            pending[dir.name]?.let { return@mapNotNull NoteSummary.of(it) }
+            val noteFile = File(dir, "note.json")
+            if (!noteFile.exists()) return@mapNotNull null
+            val metaFile = File(dir, META_FILE)
+            if (metaFile.exists() && metaFile.lastModified() >= noteFile.lastModified()) {
+                runCatching { NoteJson.decodeFromString(NoteSummary.serializer(), metaFile.readText()) }
+                    .getOrNull()?.takeIf { it.id == dir.name }?.let { return@mapNotNull it }
+            }
+            val note = load(dir.name) ?: return@mapNotNull null
+            NoteSummary.of(note).also { runCatching { synchronized(writeLock) { writeSummary(dir, it) } } }
+        }.sortedByDescending { it.updatedAt }
+
+    private fun writeSummary(dir: File, summary: NoteSummary) {
+        atomicWrite(File(dir, META_FILE), NoteJson.encodeToString(NoteSummary.serializer(), summary))
+    }
+
+    /** 在后台保存。同一笔记排队中的多次保存只写最后一次。 */
+    fun saveAsync(note: Note) {
+        if (pending.put(note.id, withLatestSync(note)) == null) writer.execute { writePending(note.id) }
+    }
+
+    private fun writePending(id: String) {
+        val n = pending[id] ?: return
+        try {
+            save(n)
+        } catch (e: Exception) {
+            log.warning("保存笔记 $id 失败: ${e.message}")
+        } finally {
+            // 写的过程中又有新版本进来：再排一次
+            if (!pending.remove(id, n)) writer.execute { writePending(id) }
+        }
+    }
+
+    /** 等后台保存全部写完（离开编辑器、删除笔记前调用）。 */
+    fun flush(timeoutMs: Long = 10_000) {
+        runCatching { writer.submit {}.get(timeoutMs, TimeUnit.MILLISECONDS) }
+        // 排在后面又重新入队的写入，再等一轮
+        if (pending.isNotEmpty()) runCatching { writer.submit {}.get(timeoutMs, TimeUnit.MILLISECONDS) }
     }
 
     fun create(
@@ -123,6 +201,10 @@ class NoteRepository(private val root: File) {
     }
 
     fun delete(note: Note, remoteInkDir: String?) {
+        // 还在排队的保存不能在删除后把笔记重新写回来
+        flush()
+        pending.remove(note.id)
+        syncStates.remove(note.id)
         if (note.sync.lastSyncedAt > 0) {
             val t = Tombstone(note.id, note.sync.remoteMdPath, remoteInkDir)
             atomicWrite(File(tombDir, "${note.id}.json"), NoteJson.encodeToString(Tombstone.serializer(), t))
@@ -135,6 +217,9 @@ class NoteRepository(private val root: File) {
      * 恢复时会重新上传，因此远端被删也没关系。
      */
     fun moveToTrash(note: Note, remoteInkDir: String?, now: Long = System.currentTimeMillis()) {
+        flush()
+        pending.remove(note.id)
+        syncStates.remove(note.id)
         if (note.sync.lastSyncedAt > 0) {
             val t = Tombstone(note.id, note.sync.remoteMdPath, remoteInkDir)
             atomicWrite(File(tombDir, "${note.id}.json"), NoteJson.encodeToString(Tombstone.serializer(), t))
@@ -148,6 +233,9 @@ class NoteRepository(private val root: File) {
         }
         File(dst, DELETED_MARK).writeText(now.toString())
     }
+
+    /** 回收站里的笔记数（不解析笔记内容）。 */
+    fun trashCount(): Int = trashDir.listFiles().orEmpty().count { File(it, "note.json").exists() }
 
     fun listTrash(): List<TrashedNote> =
         trashDir.listFiles().orEmpty().mapNotNull { dir ->
@@ -171,6 +259,8 @@ class NoteRepository(private val root: File) {
         }
         clearTombstone(id)
         val note = load(id) ?: return null
+        // 恢复后要整篇重新上传：同步状态清零，不能被之前记下的状态顶回去
+        syncStates.remove(id)
         val restored = note.copy(updatedAt = now, sync = com.adnote.model.SyncState())
         save(restored)
         return restored
@@ -197,22 +287,31 @@ class NoteRepository(private val root: File) {
         File(tombDir, "$noteId.json").delete()
     }
 
-    fun search(query: String, tag: String? = null, folder: String? = null): List<Note> {
-        val q = query.trim().lowercase()
-        return list().filter { n ->
-            (tag == null || tag in n.tags) &&
-                (folder == null || n.folder == folder || n.folder.startsWith("$folder/")) &&
-                (q.isEmpty() || n.searchableText().lowercase().contains(q))
-        }
-    }
+    fun search(query: String, tag: String? = null, folder: String? = null): List<Note> =
+        filter(list(), query, tag, folder)
 
-    fun allTags(): List<String> = list().flatMap { it.tags }.distinct().sorted()
+    fun allTags(): List<String> = tagsOf(list())
 
-    fun allFolders(): List<String> =
-        (list().map { it.folder } + Note.DEFAULT_FOLDER).distinct().sorted()
+    fun allFolders(): List<String> = foldersOf(list())
 
     companion object {
         private const val DELETED_MARK = ".deleted_at"
+        private const val META_FILE = "meta.json"
+
+        /** 按关键字、标签、文件夹筛选（在已加载的列表上做，不再读磁盘）。 */
+        fun filter(notes: List<Note>, query: String, tag: String? = null, folder: String? = null): List<Note> {
+            val q = query.trim().lowercase()
+            return notes.filter { n ->
+                (tag == null || tag in n.tags) &&
+                    (folder == null || n.folder == folder || n.folder.startsWith("$folder/")) &&
+                    (q.isEmpty() || n.searchableText().lowercase().contains(q))
+            }
+        }
+
+        fun tagsOf(notes: List<Note>): List<String> = notes.flatMap { it.tags }.distinct().sorted()
+
+        fun foldersOf(notes: List<Note>): List<String> =
+            (notes.map { it.folder } + Note.DEFAULT_FOLDER).distinct().sorted()
     }
 
     private fun atomicWrite(target: File, content: String) {

@@ -37,9 +37,10 @@ import com.adnote.ink.ScratchOut
 import com.adnote.ink.Selection
 import com.adnote.ink.SelectionOps
 import com.adnote.ink.ShapeRecognizer
+import com.adnote.ink.StrokeGeometry
 import com.adnote.ink.TextLayout
 import com.adnote.model.EraserMode
-import com.adnote.model.EraserSize
+import com.adnote.model.EraserSizes
 import com.adnote.model.ImageItem
 import com.adnote.model.InkPoint
 import com.adnote.model.Layer
@@ -120,7 +121,14 @@ class EditorActivity : AppCompatActivity() {
 
     private var selection: Selection = Selection.EMPTY
 
+    /** 插入图片、粘贴、笔身按键套索时自动切到套索前的工具；选区结束后切回去。 */
+    private var toolBeforeAutoLasso: Tool? = null
+
+    /** 上次交给直绘层的书写区域与排除区域，没变化时不重复设置。 */
+    private var lastPenRegion: Pair<Rect, List<Rect>>? = null
+
     private var resumed = false
+    private var windowFocused = false
 
     /** 当前打开的对话框/弹出菜单层数（可能嵌套，如页面概览里再弹菜单）。 */
     private var overlayDepth = 0
@@ -128,15 +136,21 @@ class EditorActivity : AppCompatActivity() {
     private val handler = Handler(Looper.getMainLooper())
     private val saveRunnable = Runnable { saveNow() }
 
-    private lateinit var recorder: AudioRecorder
     private val player = AudioPlayer()
-    private var recordingPath: String? = null
     private val recordTicker = object : Runnable {
         override fun run() {
-            if (!recorder.isRecording) return
-            tvRecordingTime.text = "● 录音中 ${formatDuration(recorder.elapsedMs)}"
+            val active = RecordingSession.active ?: return
+            val other = if (active.noteId != note.id) "（「${active.noteTitle}」）" else ""
+            tvRecordingTime.text = "● 录音中$other ${formatDuration(RecordingSession.elapsedMs)}"
             handler.postDelayed(this, 1000)
         }
+    }
+
+    /** 录音结束且属于这篇笔记时，记进内存里的笔记（否则之后保存会把它覆盖掉）。 */
+    private val recordingListener: (Recording) -> Unit = { rec ->
+        note = note.copy(recordings = note.recordings + rec, updatedAt = System.currentTimeMillis())
+        saveNow()
+        updateRecordingBar()
     }
 
     /** 选择自定义背景后是否应用到全部页面。 */
@@ -168,7 +182,7 @@ class EditorActivity : AppCompatActivity() {
         // （上次停在橡皮、套索或文字时，进来直接写字会没反应）
         tools = app.toolState.copy(tool = Tool.PEN)
         assets = BitmapAssets(repo.getNoteDir(note.id))
-        recorder = AudioRecorder(this)
+        RecordingSession.addListener(note.id, recordingListener)
 
         if (note.isPdf) {
             val pdfFile = repo.getPdfFile(note)
@@ -299,6 +313,7 @@ class EditorActivity : AppCompatActivity() {
 
             override fun onViewportChanged(viewport: Viewport) {
                 applyPenInputStyle()
+                // 其中会更新书写区域：缩放、平移后页面在屏幕上的位置变了
                 updateZoomLabel()
             }
 
@@ -325,22 +340,31 @@ class EditorActivity : AppCompatActivity() {
     }
 
     private fun setupPenInput() {
-        val rect = Rect()
-        inkCanvas.getGlobalVisibleRect(rect)
+        // 相对画布视图的坐标，只包含页面本身（不含四周灰边）
+        val rect = inkCanvas.visiblePageRect()
         if (rect.isEmpty) rect.set(0, 0, inkCanvas.width, inkCanvas.height)
 
         val input = PenInputFactory.create(preferOnyx = app.preferOnyx, stylusOnly = app.stylusOnly)
         penInput = input
+        lastPenRegion = null
 
         val listener = object : PenInputListener {
-            override fun onPenDown() = inkCanvas.setPenDown(true)
+            override fun onPenDown() {
+                inkCanvas.setPenDown(true)
+                // 橡皮大小预览还没消失就落笔：直接去掉，不能在书写中途暂停直绘
+                if (eraserPreviewShown) {
+                    eraserPreviewShown = false
+                    handler.removeCallbacks(hideEraserPreview)
+                    inkCanvas.hideEraserCursor()
+                }
+            }
 
             override fun onDrawing(points: List<InkPoint>) {
                 if (points.isEmpty()) inkCanvas.setPenDown(false)
                 val pts = inkCanvas.toPage(points)
                 when (tools.tool) {
                     Tool.PEN, Tool.HIGHLIGHTER, Tool.SHAPE ->
-                        inkCanvas.setTransientStroke(if (pts.isEmpty()) null else newStroke(pts))
+                        inkCanvas.setTransientStroke(if (pts.isEmpty() || !startsOnPage(pts)) null else newStroke(pts))
                     Tool.ERASER -> liveErase(pts)
                     Tool.LASSO -> inkCanvas.setLassoPath(pts)
                     Tool.TEXT -> Unit
@@ -352,11 +376,19 @@ class EditorActivity : AppCompatActivity() {
                 inkCanvas.setTransientStroke(null)
                 if (points.isEmpty()) return
                 val pts = inkCanvas.toPage(points)
+                val inkTool = tools.tool == Tool.PEN || tools.tool == Tool.HIGHLIGHTER ||
+                    tools.tool == Tool.SHAPE || tools.tool == Tool.TEXT
+                if (inkTool && !startsOnPage(pts)) {
+                    // 从页面外的灰边落笔：不属于页面，忽略（并刷掉直绘层可能画出的痕迹）
+                    withPenPaused { inkCanvas.invalidate() }
+                    return
+                }
                 when (tools.tool) {
                     Tool.PEN, Tool.HIGHLIGHTER, Tool.SHAPE -> handleInk(pts)
                     Tool.ERASER -> finishErase(pts)
                     Tool.LASSO -> if (isTap(pts)) {
-                        inkCanvas.setLassoPath(emptyList())
+                        // 直绘层可能留下一个虚线小点，顺带刷掉
+                        withPenPaused { inkCanvas.setLassoPath(emptyList()) }
                         handleTap(pts[0].x, pts[0].y, byPen = true)
                     } else {
                         finishLasso(pts)
@@ -393,11 +425,13 @@ class EditorActivity : AppCompatActivity() {
                 val pts = inkCanvas.toPage(points)
                 when (app.stylusButtonAction) {
                     StylusButtonAction.LASSO -> {
-                        if (tools.tool != Tool.LASSO) {
-                            tools = tools.copy(tool = Tool.LASSO)
-                            applyTools()
-                        }
+                        switchToLassoTemporarily()
                         finishLasso(pts)
+                        // 没圈中任何东西时不会进入选区，直接回到原来的工具
+                        if (selection.isEmpty) {
+                            toolBeforeAutoLasso?.let { tools = tools.copy(tool = it); applyTools() }
+                            toolBeforeAutoLasso = null
+                        }
                     }
                     StylusButtonAction.HIGHLIGHTER -> commitStroke(highlighterStroke(pts), pause = true)
                     else -> Unit
@@ -409,7 +443,7 @@ class EditorActivity : AppCompatActivity() {
                 // 墨水屏上悬停光标每移动一下就要刷新一次屏幕，只在普通彩屏上显示
                 if (isEink) return
                 val px = inkCanvas.toPageX(x); val py = inkCanvas.toPageY(y)
-                val r = if (eraser || tools.tool == Tool.ERASER) tools.eraserSize.radius else tools.activeWidth / 2f
+                val r = if (eraser || tools.tool == Tool.ERASER) tools.eraserRadius else tools.activeWidth / 2f
                 inkCanvas.setHover(px, py, r)
             }
 
@@ -429,6 +463,8 @@ class EditorActivity : AppCompatActivity() {
     // region 工具
 
     private fun selectTool(tool: Tool) {
+        // 用户自己换了工具，就不再自动切回
+        toolBeforeAutoLasso = null
         if (tools.tool == tool) return
         tools = tools.copy(tool = tool)
         applyTools()
@@ -461,32 +497,37 @@ class EditorActivity : AppCompatActivity() {
 
     private fun applyPenInputStyle() {
         val input = penInput ?: return
-        val writing = tools.tool == Tool.PEN || tools.tool == Tool.HIGHLIGHTER || tools.tool == Tool.SHAPE
-        val eraser = tools.tool == Tool.ERASER
+        val tool = tools.tool
+        val writing = tool == Tool.PEN || tool == Tool.HIGHLIGHTER || tool == Tool.SHAPE
         val scale = inkCanvas.viewport.scale
+        val density = resources.displayMetrics.density
         val page = note.pages.getOrNull(currentPageIndex)
-        // PDF 原文或自定义背景图上，纯色轨迹会盖住底图，不能用来预览擦除
+        // PDF 原文或自定义背景图上，纸色轨迹会盖住底图，不能用来预览擦除
         val plainPaper = page != null && !note.isPdf && page.backgroundImage == null
         runCatching {
-            if (eraser && plainPaper) {
-                // 橡皮：让硬件直绘层画一条纸色的粗线，宽度等于橡皮直径，擦过的地方立刻「变白」，
-                // 抬笔后再按真实擦除结果刷新。否则文石固件会用当前笔型画一条细墨线，看起来像在写字
-                input.setPenStyle(PenType.MARKER)
-                input.setStrokeColor(StrokePainter.parseColor(PaperPresets.find(page!!.backgroundColor).hex))
-                input.setStrokeWidth(tools.eraserSize.radius * 2f * scale)
-            } else if (eraser) {
-                // 有底图的页面关闭直绘；万一固件不支持关闭，也只画一条不遮挡内容的细灰线
-                input.setPenStyle(PenType.PENCIL)
-                input.setStrokeColor(StrokePainter.parseColor(ERASER_GUIDE_COLOR))
-                input.setStrokeWidth(2f * scale)
-            } else {
-                input.setPenStyle(tools.activePen)
-                input.setStrokeColor(StrokePainter.parseColor(tools.activeColor))
-                // 直绘层按屏幕像素画，需要乘上当前缩放
-                input.setStrokeWidth(tools.activeWidth * scale)
+            when {
+                tool == Tool.ERASER && plainPaper -> {
+                    // 橡皮：硬件直绘层画一条纸色粗线，宽度等于橡皮直径，擦过的地方立即变白，抬笔后按真实擦除结果刷新
+                    input.setEraserTrailStyle()
+                    input.setStrokeColor(StrokePainter.parseColor(PaperPresets.find(page!!.backgroundColor).hex))
+                    input.setStrokeWidth(tools.eraserRadius * 2f * scale)
+                }
+                tool == Tool.ERASER || tool == Tool.LASSO -> {
+                    // 套索、底图上的橡皮：细虚线显示轨迹，不遮挡内容
+                    input.setDashStyle()
+                    input.setStrokeColor(StrokePainter.parseColor(GUIDE_COLOR))
+                    input.setStrokeWidth(1.5f * density)
+                }
+                else -> {
+                    // 荧光笔用马克笔笔型：文石按「变暗」叠加，不会盖住下面的字；抬笔后换成半透明的最终效果
+                    input.setPenStyle(tools.activePen)
+                    input.setStrokeColor(StrokePainter.parseColor(tools.activeColor))
+                    // 直绘层按屏幕像素画，需要乘上当前缩放
+                    input.setStrokeWidth(tools.activeWidth * scale)
+                }
             }
-            // 普通书写、形状、纯色纸上的橡皮由硬件直绘；荧光笔（半透明）、套索与文字由应用自己绘制
-            input.setRenderEnabled(tools.tool == Tool.PEN || tools.tool == Tool.SHAPE || (eraser && plainPaper))
+            // 文字工具只有点按，不需要画出轨迹；其余工具都由硬件直绘层实时显示
+            input.setRenderEnabled(tool != Tool.TEXT)
             input.setPredictionEnabled(writing)
         }
     }
@@ -513,12 +554,28 @@ class EditorActivity : AppCompatActivity() {
                     applyTools()
                 })
             }
-            Tool.ERASER -> showHint("${tools.eraserMode.displayName} · ${tools.eraserSize.displayName}号  ▾")
+            Tool.ERASER -> {
+                // 擦除方式与大小直接放在工具栏上，圆点越大橡皮越大；「▾」打开连续调节
+                EraserMode.entries.forEach { m ->
+                    layoutQuickColors.addView(Chips.text(this, m.displayName, m == tools.eraserMode) {
+                        tools = tools.copy(eraserMode = m)
+                        applyTools()
+                    })
+                }
+                EraserSizes.PRESETS.forEachIndexed { i, r ->
+                    layoutQuickColors.addView(eraserSizeDot(i, r))
+                }
+                showHint("大小 ▾")
+            }
             Tool.LASSO -> showHint(
                 if (app.clipboard != null) "圈选后可拖动/缩放/旋转 · 长按套索粘贴" else "圈选后可拖动、缩放、旋转、删除、复制"
             )
         }
-        if (tools.tool == Tool.SHAPE) showHint("画完自动规整成直线、矩形、圆")
+        // 当前笔型与粗细显示在色板后面，点一下打开设置（和再点一次工具按钮一样）
+        val width = String.format("%.1f", tools.activeWidth)
+        if (tools.tool == Tool.PEN) showHint("${tools.penType.displayName} · 粗细 $width  ▾")
+        if (tools.tool == Tool.HIGHLIGHTER) showHint("粗细 $width  ▾")
+        if (tools.tool == Tool.SHAPE) showHint("${tools.penType.displayName} · 粗细 $width · 画完自动规整成直线、矩形、圆  ▾")
         if (tools.tool == Tool.TEXT) showHint("点按页面添加文字")
     }
 
@@ -528,6 +585,9 @@ class EditorActivity : AppCompatActivity() {
     }
 
     private fun newStroke(points: List<InkPoint>): Stroke = tools.newStroke(points).copy(layer = activeLayer())
+
+    private fun startsOnPage(points: List<InkPoint>): Boolean =
+        inkCanvas.isOnPage(points[0].x, points[0].y, slop = 4f / inkCanvas.viewport.scale)
 
     private fun highlighterStroke(points: List<InkPoint>): Stroke =
         Stroke(points = points, width = tools.highlighterWidth, color = tools.highlighterColor,
@@ -629,20 +689,28 @@ class EditorActivity : AppCompatActivity() {
         val p = page()
         val layer = activeLayer()
         val editable = p.strokes.filter { it.layer == layer }
-        val radius = tools.eraserSize.radius
-        val next = when (tools.eraserMode) {
+        val radius = tools.eraserRadius
+        val next: List<Stroke>
+        val changed: List<Stroke>
+        when (tools.eraserMode) {
             EraserMode.PARTIAL -> {
                 val erased = Eraser.erasePartial(editable, path, radius)
                 if (erased === editable) return
-                p.strokes.filter { it.layer != layer } + erased
+                next = p.strokes.filter { it.layer != layer } + erased
+                // 被擦到的原笔画（整条删掉或拆成几段），擦除后的内容都在它们的范围内
+                val kept = java.util.Collections.newSetFromMap(java.util.IdentityHashMap<Stroke, Boolean>())
+                kept.addAll(erased)
+                changed = editable.filter { it !in kept }
             }
             EraserMode.STROKE -> {
                 val hit = Eraser.hitStrokes(editable, path, radius)
                 if (hit.isEmpty()) return
-                p.strokes.filterNot { it.id in hit }
+                next = p.strokes.filterNot { it.id in hit }
+                changed = editable.filter { it.id in hit }
             }
         }
-        inkCanvas.updatePage(p.copy(strokes = next))
+        // 只重画变化的那一块，笔迹多的页面实时擦除也跟得上
+        inkCanvas.updatePage(p.copy(strokes = next), dirty = StrokeGeometry.bounds(changed))
     }
 
     /** 实时擦除：只处理新增的轨迹段，同时显示橡皮光标。 */
@@ -653,7 +721,7 @@ class EditorActivity : AppCompatActivity() {
             return
         }
         val last = points.last()
-        inkCanvas.setEraserCursor(last.x, last.y, tools.eraserSize.radius)
+        inkCanvas.setEraserCursor(last.x, last.y, tools.eraserRadius)
         if (eraseSnapshot == null) {
             eraseSnapshot = page()
             erasedUpTo = 0
@@ -750,13 +818,30 @@ class EditorActivity : AppCompatActivity() {
         updateExcludeRects()
     }
 
-    private fun exitSelection() {
+    /** 结束选区。[restoreTool] 为 false 时（紧接着要选中新内容）保持套索，不切回原来的工具。 */
+    private fun exitSelection(restoreTool: Boolean = true) {
         if (selection.isEmpty) return
         selection = Selection.EMPTY
         inkCanvas.clearSelection()
         layoutSelectionBar.visibility = View.GONE
         refreshPenEnabled()
         updateExcludeRects()
+        // 自动切到套索的，处理完选区后回到原来的工具，否则接着写字会没反应
+        if (!restoreTool) return
+        val previous = toolBeforeAutoLasso
+        toolBeforeAutoLasso = null
+        if (previous != null && tools.tool == Tool.LASSO) {
+            tools = tools.copy(tool = previous)
+            applyTools()
+        }
+    }
+
+    /** 自动切到套索（插图、粘贴等），记住原来的工具。 */
+    private fun switchToLassoTemporarily() {
+        if (tools.tool == Tool.LASSO) return
+        toolBeforeAutoLasso = tools.tool
+        tools = tools.copy(tool = Tool.LASSO)
+        applyTools()
     }
 
     private fun deleteSelection() {
@@ -780,7 +865,7 @@ class EditorActivity : AppCompatActivity() {
         val before = page()
         val clip = SelectionOps.copy(before, selection, note.id)
         val (after, newSel) = SelectionOps.paste(before, clip, activeLayer(), 40f, 40f)
-        exitSelection()
+        exitSelection(restoreTool = false)
         commitPage(before, after)
         enterSelection(newSel)
     }
@@ -796,10 +881,7 @@ class EditorActivity : AppCompatActivity() {
         val (after, newSel) = SelectionOps.paste(before, clip, activeLayer(), dx, dy) { path ->
             repo.copyAsset(clip.sourceNoteId, path, note.id)
         }
-        if (tools.tool != Tool.LASSO) {
-            tools = tools.copy(tool = Tool.LASSO)
-            applyTools()
-        }
+        switchToLassoTemporarily()
         commitPage(before, after)
         enterSelection(newSel)
     }
@@ -983,10 +1065,7 @@ class EditorActivity : AppCompatActivity() {
                 path = imported.path, x = (cx - w / 2f).coerceAtLeast(0f), y = (cy - h / 2f).coerceAtLeast(0f),
                 width = w, height = h, layer = activeLayer(),
             )
-            if (tools.tool != Tool.LASSO) {
-                tools = tools.copy(tool = Tool.LASSO)
-                applyTools()
-            }
+            switchToLassoTemporarily()
             commitPage(before, before.copy(images = before.images + item))
             enterSelection(Selection(images = setOf(item.id)))
         }
@@ -1015,8 +1094,9 @@ class EditorActivity : AppCompatActivity() {
         val cur = note.pages[currentPageIndex]
         withPenPaused { inkCanvas.updatePage(page().let { c -> cur.copy(strokes = c.strokes, texts = c.texts, images = c.images, layers = c.layers) }) }
         updatePageIndicator()
-        // 纸色、页面尺寸可能变了：橡皮直绘色与笔宽缩放随之更新
+        // 纸色、页面尺寸可能变了：橡皮直绘色、笔宽缩放与书写区域随之更新
         applyPenInputStyle()
+        updateExcludeRects()
     }
 
     private fun toggleRuler() {
@@ -1151,7 +1231,7 @@ class EditorActivity : AppCompatActivity() {
     // region 录音
 
     private fun toggleRecording() {
-        if (recorder.isRecording) {
+        if (RecordingSession.active != null) {
             stopRecording()
             return
         }
@@ -1163,39 +1243,34 @@ class EditorActivity : AppCompatActivity() {
     }
 
     private fun startRecording() {
-        val path = repo.newAssetPath("audio", "m4a")
         try {
-            recorder.start(repo.assetFile(note.id, path))
+            RecordingSession.start(this, note.id, note.title, note.pages.getOrNull(currentPageIndex)?.id)
         } catch (e: Exception) {
             toast("无法开始录音：${e.message}")
             return
         }
-        recordingPath = path
-        layoutRecordingBar.visibility = View.VISIBLE
-        btnRecord.setBackgroundResource(R.drawable.bg_tool_selected)
-        handler.post(recordTicker)
-        updateExcludeRects()
+        toast("开始录音，熄屏或切到别的应用也会继续，可在通知栏停止")
+        updateRecordingBar()
     }
 
     private fun stopRecording() {
-        if (!recorder.isRecording) return
-        val duration = recorder.stop()
-        handler.removeCallbacks(recordTicker)
-        layoutRecordingBar.visibility = View.GONE
-        btnRecord.setBackgroundResource(R.drawable.bg_button_secondary)
-        updateExcludeRects()
-        val path = recordingPath ?: return
-        recordingPath = null
-        if (duration < 800) {
-            repo.assetFile(note.id, path).delete()
-            toast("录音太短，已丢弃")
-            return
+        val (active, rec) = RecordingSession.stop(this) ?: return
+        updateRecordingBar()
+        when {
+            rec == null -> toast("录音太短，已丢弃")
+            active.noteId == note.id -> toast("已保存录音 ${formatDuration(rec.durationMs)}，在「更多 → 录音」里回放")
+            else -> toast("录音已保存到「${active.noteTitle}」")
         }
-        val rec = Recording(path = path, createdAt = System.currentTimeMillis(), durationMs = duration,
-            pageId = note.pages.getOrNull(currentPageIndex)?.id)
-        note = note.copy(recordings = note.recordings + rec, updatedAt = System.currentTimeMillis())
-        saveNow()
-        toast("已保存录音 ${formatDuration(duration)}，在「更多 → 录音」里回放")
+    }
+
+    /** 录音条跟随进程里的录音状态（可能是在别的笔记里开始的，或已从通知栏停止）。 */
+    private fun updateRecordingBar() {
+        val recording = RecordingSession.active != null
+        handler.removeCallbacks(recordTicker)
+        layoutRecordingBar.visibility = if (recording) View.VISIBLE else View.GONE
+        btnRecord.setBackgroundResource(if (recording) R.drawable.bg_tool_selected else R.drawable.bg_button_secondary)
+        if (recording) handler.post(recordTicker)
+        updateExcludeRects()
     }
 
     private fun showRecordingsDialog() {
@@ -1267,6 +1342,14 @@ class EditorActivity : AppCompatActivity() {
         if (index != currentPageIndex) autoRecognize(currentPageIndex)
         exitSelection()
         currentPageIndex = index
+        // 空白页按画布比例调整高度，整页铺满、四周没有写不进去的灰边。
+        // 本次打开后擦空的页面还能撤销回原来的内容，尺寸保持不变
+        val canUndo = histories[note.pages[index].id]?.canUndo == true
+        val fitted = if (canUndo) note else PageOps.fitEmptyPageToCanvas(note, index, inkCanvas.width, inkCanvas.height)
+        if (fitted !== note) {
+            note = fitted
+            saveNow()
+        }
         val page = note.pages[index]
         inkCanvas.setPage(page)
 
@@ -1675,13 +1758,57 @@ class EditorActivity : AppCompatActivity() {
 
     private fun widthToProgress(w: Float): Int = ((w - PenPresets.WIDTH_MIN) * 2).roundToInt().coerceAtLeast(0)
 
+    /** 工具栏上的橡皮档位：圆点按档位由小到大，当前档位实心。 */
+    private fun eraserSizeDot(index: Int, radius: Float): View {
+        val density = resources.displayMetrics.density
+        val n = EraserSizes.PRESETS.size
+        val size = (36 * density).roundToInt()
+        return EraserPreviewView(this).apply {
+            compact = true
+            diameterPx = (8f + 20f * index / (n - 1).coerceAtLeast(1)) * density
+            filled = kotlin.math.abs(tools.eraserRadius - radius) < 0.5f
+            layoutParams = LinearLayout.LayoutParams(size, size)
+            contentDescription = "橡皮大小 ${index + 1}"
+            setOnClickListener { setEraserRadius(radius) }
+        }
+    }
+
+    private fun setEraserRadius(radius: Float) {
+        tools = tools.copy(tool = Tool.ERASER, eraserRadius = EraserSizes.clamp(radius))
+        applyTools()
+        flashEraserPreview()
+    }
+
+    /** 在页面中央按实际大小短暂显示橡皮范围，换了大小马上能看到擦起来有多大。 */
+    private fun flashEraserPreview() {
+        val vp = inkCanvas.viewport
+        val p = page()
+        val cx = vp.toPageX(vp.viewW / 2f).coerceIn(0f, p.width.toFloat())
+        val cy = vp.toPageY(vp.viewH / 2f).coerceIn(0f, p.height.toFloat())
+        handler.removeCallbacks(hideEraserPreview)
+        withPenPaused { inkCanvas.setEraserCursor(cx, cy, tools.eraserRadius) }
+        eraserPreviewShown = true
+        handler.postDelayed(hideEraserPreview, ERASER_PREVIEW_MS)
+    }
+
+    private var eraserPreviewShown = false
+
+    private val hideEraserPreview = Runnable {
+        eraserPreviewShown = false
+        withPenPaused { inkCanvas.hideEraserCursor() }
+    }
+
     private fun showEraserSettingsDialog() {
         val view = layoutInflater.inflate(R.layout.dialog_eraser_settings, null)
         val modeChips = view.findViewById<LinearLayout>(R.id.layoutEraserModeChips)
         val sizeChips = view.findViewById<LinearLayout>(R.id.layoutEraserSizeChips)
         val hint = view.findViewById<TextView>(R.id.tvEraserModeHint)
+        val seek = view.findViewById<SeekBar>(R.id.seekEraserSize)
+        val tvValue = view.findViewById<TextView>(R.id.tvEraserSizeValue)
+        val preview = view.findViewById<EraserPreviewView>(R.id.eraserPreview)
         var mode = tools.eraserMode
-        var size = tools.eraserSize
+        var radius = tools.eraserRadius
+        val scale = inkCanvas.viewport.scale
 
         lateinit var refresh: () -> Unit
         refresh = {
@@ -1694,10 +1821,27 @@ class EditorActivity : AppCompatActivity() {
                 modeChips.addView(Chips.text(this, m.displayName, m == mode) { mode = m; refresh() })
             }
             sizeChips.removeAllViews()
-            EraserSize.entries.forEach { s ->
-                sizeChips.addView(Chips.text(this, s.displayName, s == size) { size = s; refresh() })
+            EraserSizes.PRESETS.forEachIndexed { i, r ->
+                sizeChips.addView(Chips.text(this, "${i + 1} 档", kotlin.math.abs(r - radius) < 0.5f) {
+                    radius = r
+                    seek.progress = radiusToProgress(r)
+                    refresh()
+                })
             }
+            tvValue.text = "直径 ${(radius * 2).roundToInt()}（下方圆圈是按当前缩放在屏幕上的实际大小）"
+            preview.diameterPx = radius * 2f * scale
         }
+        seek.max = radiusToProgress(EraserSizes.MAX)
+        seek.progress = radiusToProgress(radius)
+        seek.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(sb: SeekBar, progress: Int, fromUser: Boolean) {
+                if (!fromUser) return
+                radius = EraserSizes.clamp(EraserSizes.MIN + progress)
+                refresh()
+            }
+            override fun onStartTrackingTouch(sb: SeekBar) = Unit
+            override fun onStopTrackingTouch(sb: SeekBar) = Unit
+        })
         refresh()
 
         var dialog: AlertDialog? = null
@@ -1710,12 +1854,16 @@ class EditorActivity : AppCompatActivity() {
                 .setTitle("橡皮擦设置")
                 .setView(view)
                 .setPositiveButton("确定") { _, _ ->
-                    tools = tools.copy(tool = Tool.ERASER, eraserMode = mode, eraserSize = size)
+                    val changed = radius != tools.eraserRadius
+                    tools = tools.copy(tool = Tool.ERASER, eraserMode = mode, eraserRadius = EraserSizes.clamp(radius))
                     applyTools()
+                    if (changed) flashEraserPreview()
                 }
                 .setNegativeButton("取消", null)
         )
     }
+
+    private fun radiusToProgress(r: Float): Int = (r - EraserSizes.MIN).roundToInt().coerceAtLeast(0)
 
     private fun showEditMetadataDialog() {
         val dialogView = layoutInflater.inflate(R.layout.dialog_edit_note, null)
@@ -1774,7 +1922,18 @@ class EditorActivity : AppCompatActivity() {
     // region 画笔通道开关、保存、识别
 
     private fun refreshPenEnabled() {
-        penInput?.setEnabled(resumed && overlayDepth == 0 && selection.isEmpty)
+        penInput?.setEnabled(resumed && windowFocused && overlayDepth == 0 && selection.isEmpty)
+    }
+
+    /**
+     * 窗口失去焦点（下拉通知栏、系统弹窗、音量条等）时暂停直绘：
+     * 文石直绘开启时屏幕不刷新，通知栏会显示不出来，笔也会画到通知栏上。
+     */
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (windowFocused == hasFocus) return
+        windowFocused = hasFocus
+        refreshPenEnabled()
     }
 
     /** 暂停直绘执行 [block] 后恢复：墨水屏需要这样才能刷出应用自己重绘的内容。 */
@@ -1784,14 +1943,30 @@ class EditorActivity : AppCompatActivity() {
         refreshPenEnabled()
     }
 
-    /** 浮在画布上的面板不参与文石直绘，笔点上去就是点按钮。 */
+    /**
+     * 更新直绘层的书写区域：只包含页面本身（缩放、翻页、页面尺寸变化后都要更新），
+     * 并排除浮在画布上的面板，笔点上去就是点按钮。坐标都相对画布视图。
+     */
     private fun updateExcludeRects() {
         inkCanvas.post {
+            val input = penInput ?: return@post
+            val origin = IntArray(2).also { inkCanvas.getLocationOnScreen(it) }
             val rects = listOf(layoutRecognized, layoutSelectionBar, layoutRecordingBar, tvZoom)
-                .filter { it.visibility == View.VISIBLE }
-                .map { v -> Rect().also { v.getGlobalVisibleRect(it) } }
-                .filterNot { it.isEmpty }
-            penInput?.setExcludeRects(rects)
+                .filter { it.visibility == View.VISIBLE && it.width > 0 }
+                .map { v ->
+                    val loc = IntArray(2).also { v.getLocationOnScreen(it) }
+                    val l = loc[0] - origin[0]; val t = loc[1] - origin[1]
+                    Rect(l, t, l + v.width, t + v.height)
+                }
+            val limit = inkCanvas.visiblePageRect()
+            val region = limit to rects
+            // 没变化就不动直绘层：每次暂停、恢复直绘在墨水屏上都可能多刷一次
+            if (region == lastPenRegion) return@post
+            lastPenRegion = region
+            withPenPaused {
+                if (!limit.isEmpty) input.setLimitRect(limit)
+                input.setExcludeRects(rects)
+            }
         }
     }
 
@@ -1812,9 +1987,10 @@ class EditorActivity : AppCompatActivity() {
         handler.postDelayed(saveRunnable, SAVE_DELAY_MS)
     }
 
+    /** 在后台保存：整本笔记序列化可能要几百毫秒，不能卡住书写。之后立即读取也能拿到这一版。 */
     private fun saveNow() {
         handler.removeCallbacks(saveRunnable)
-        repo.save(note)
+        repo.saveAsync(note)
     }
 
     /** 后台识别离开的页面，结果用于全文搜索与 Obsidian 同步；笔迹没变就跳过。 */
@@ -1901,6 +2077,7 @@ class EditorActivity : AppCompatActivity() {
         super.onResume()
         resumed = true
         refreshPenEnabled()
+        if (::note.isInitialized) updateRecordingBar()
     }
 
     override fun onPause() {
@@ -1908,10 +2085,13 @@ class EditorActivity : AppCompatActivity() {
         resumed = false
         refreshPenEnabled()
         if (::note.isInitialized) {
-            stopRecording()
+            // 录音不停：熄屏、切到别的应用都继续录，由前台服务保活
+            handler.removeCallbacks(recordTicker)
             player.stop()
             syncCurrentPageFromCanvas()
             saveNow()
+            // 离开编辑器（切到别的应用、熄屏）时确保写到磁盘，进程随后被系统回收也不丢
+            repo.flush()
             autoRecognize(currentPageIndex)
         }
         app.saveToolState(tools)
@@ -1920,6 +2100,7 @@ class EditorActivity : AppCompatActivity() {
     override fun onDestroy() {
         super.onDestroy()
         handler.removeCallbacksAndMessages(null)
+        RecordingSession.removeListener(recordingListener)
         penInput?.detach()
         penInput = null
         pdfRenderer?.close()
@@ -1930,7 +2111,9 @@ class EditorActivity : AppCompatActivity() {
         private const val EXTRA_NOTE_ID = "extra_note_id"
         private const val SAVE_DELAY_MS = 1500L
         private val TEXT_SIZES = listOf(24f, 32f, 40f, 56f, 72f, 96f)
-        private const val ERASER_GUIDE_COLOR = "#9CA3AF"
+        /** 套索、橡皮路径提示的颜色。 */
+        private const val GUIDE_COLOR = "#4B5563"
+        private const val ERASER_PREVIEW_MS = 1500L
 
         private const val MENU_INSERT = 1
         private const val MENU_DUPLICATE = 2
@@ -1948,10 +2131,10 @@ class EditorActivity : AppCompatActivity() {
         private const val MENU_EXTEND = 14
 
         fun start(context: Context, noteId: String) {
-            val intent = Intent(context, EditorActivity::class.java).apply {
-                putExtra(EXTRA_NOTE_ID, noteId)
-            }
-            context.startActivity(intent)
+            context.startActivity(intent(context, noteId))
         }
+
+        fun intent(context: Context, noteId: String): Intent =
+            Intent(context, EditorActivity::class.java).apply { putExtra(EXTRA_NOTE_ID, noteId) }
     }
 }

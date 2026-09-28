@@ -24,7 +24,8 @@ data class InkPoint(
 @Serializable
 data class Stroke(
     val id: String = newId(),
-    val points: List<InkPoint>,
+    /** 按紧凑格式落盘，见 [InkPointsSerializer]。 */
+    @Serializable(with = InkPointsSerializer::class) val points: List<InkPoint>,
     /** 基准笔宽（像素），实际宽度随压感在 [0.4, 1.2] 倍之间变化。 */
     val width: Float = 3f,
     /** 笔迹颜色 Hex，默认墨黑 #000000。 */

@@ -250,4 +250,28 @@ tags: [Obsidian新标签1, 标签2]
         syncEngine.sync(force = true)
         assertEquals(0, puts.count { it.endsWith(".m4a") })
     }
+
+    @org.junit.Test
+    fun syncResultKeepsEditsMadeDuringUpload() {
+        val uploaded = com.adnote.model.Note(title = "t", folder = "f", tags = listOf("a"), pages = listOf(com.adnote.model.Page(width = 10, height = 10)), createdAt = 0L, updatedAt = 100L)
+        val merged = uploaded.copy(tags = listOf("a", "from-obsidian"))
+        val state = com.adnote.model.SyncState(lastSyncedAt = 500L, remoteMdPath = "f/t.md")
+
+        // 上传期间没改过：写入合并后的标签与同步状态，不再是待同步
+        val unchanged = SyncEngine.withSyncState(uploaded, uploaded, merged, state)
+        org.junit.Assert.assertEquals(listOf("a", "from-obsidian"), unchanged.tags)
+        org.junit.Assert.assertFalse(unchanged.isDirty)
+
+        // 上传期间又写了一页：保留新内容，并且仍然待同步
+        val edited = uploaded.copy(updatedAt = 300L, pages = uploaded.pages + com.adnote.model.Page(width = 10, height = 10))
+        val result = SyncEngine.withSyncState(edited, uploaded, merged, state)
+        org.junit.Assert.assertEquals(edited.pages.size, result.pages.size)
+        org.junit.Assert.assertEquals(listOf("a", "from-obsidian"), result.tags)
+        org.junit.Assert.assertEquals("f/t.md", result.sync.remoteMdPath)
+        org.junit.Assert.assertTrue(result.isDirty)
+
+        // 上传期间本地改了标签：以本地为准
+        val retagged = edited.copy(tags = listOf("b"))
+        org.junit.Assert.assertEquals(listOf("b"), SyncEngine.withSyncState(retagged, uploaded, merged, state).tags)
+    }
 }

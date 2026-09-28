@@ -135,4 +135,88 @@ class NoteRepositoryTrashTest {
         org.junit.Assert.assertTrue(copied.startsWith("images/"))
         org.junit.Assert.assertArrayEquals(byteArrayOf(1, 2, 3), repo.readAsset(b.id, copied))
     }
+
+    @Test
+    fun asyncSaveIsVisibleImmediatelyAndReachesDisk() {
+        val repo = NoteRepository(tmp.root)
+        val note = repo.create("原标题", "x", 10, 10)
+        repeat(20) { i -> repo.saveAsync(note.copy(title = "标题 $i", updatedAt = i.toLong())) }
+        // 还没写完也能读到最新版本（重新打开编辑器不会读到旧内容）
+        assertEquals("标题 19", repo.load(note.id)?.title)
+        assertEquals("标题 19", repo.list().single().title)
+        repo.flush()
+        // 换一个仓库实例直接读磁盘：最后一次保存已落盘
+        assertEquals("标题 19", NoteRepository(tmp.root).load(note.id)?.title)
+    }
+
+    @Test
+    fun pendingSaveDoesNotResurrectTrashedNote() {
+        val repo = NoteRepository(tmp.root)
+        val note = repo.create("要删除", "x", 10, 10)
+        repo.saveAsync(note.copy(title = "改过"))
+        repo.moveToTrash(note, null)
+        repo.flush()
+        assertNull(repo.load(note.id))
+        assertTrue(repo.list().isEmpty())
+        assertEquals("改过", repo.listTrash().single().note.title)
+    }
+
+    @Test
+    fun filterHelpersWorkOnLoadedList() {
+        val repo = NoteRepository(tmp.root)
+        val a = repo.create("Kotlin 协程", "工作/项目", 10, 10).copy(tags = listOf("dev"))
+        repo.save(a)
+        repo.create("购物清单", "生活", 10, 10)
+        val all = repo.list()
+        assertEquals(listOf(a.id), NoteRepository.filter(all, "协程").map { it.id })
+        assertEquals(listOf(a.id), NoteRepository.filter(all, "", folder = "工作").map { it.id })
+        assertEquals(listOf("dev"), NoteRepository.tagsOf(all))
+        assertTrue("生活" in NoteRepository.foldersOf(all))
+    }
+
+    @Test
+    fun staleEditorCopyDoesNotRollBackSyncState() {
+        val repo = NoteRepository(tmp.root)
+        val opened = repo.create("笔记", "x", 10, 10)
+        // 编辑器打开期间同步完成
+        repo.save(opened.copy(sync = SyncState(lastSyncedAt = 500L, remoteMdPath = "x/笔记.md")))
+        // 编辑器拿着旧的同步状态保存新内容
+        repo.saveAsync(opened.copy(title = "改过", updatedAt = 900L))
+        repo.flush()
+        val n = NoteRepository(tmp.root).load(opened.id)!!
+        assertEquals("改过", n.title)
+        assertEquals(500L, n.sync.lastSyncedAt)
+        assertEquals("x/笔记.md", n.sync.remoteMdPath)
+        assertTrue(n.isDirty)
+    }
+
+    @Test
+    fun summariesUseMetaFileAndRegenerateWhenStale() {
+        val repo = NoteRepository(tmp.root)
+        val n = repo.create("周会", "工作", 10, 10)
+        repo.save(n.copy(tags = listOf("team"), coverColor = "#DC2626", updatedAt = 50L))
+        val dir = repo.getNoteDir(n.id)
+        assertTrue(File(dir, "meta.json").exists())
+
+        val s = repo.summaries().single()
+        assertEquals("周会", s.title)
+        assertEquals(listOf("team"), s.tags)
+        assertEquals(1, s.pageCount)
+        assertEquals("#DC2626", s.coverColor)
+        assertTrue(s.isDirty)
+
+        // 旧版本写的笔记没有 meta.json：解析一次并补写
+        File(dir, "meta.json").delete()
+        assertEquals("周会", NoteRepository(tmp.root).summaries().single().title)
+        assertTrue(File(dir, "meta.json").exists())
+
+        // 笔记文件比 meta.json 新（别处改过）：以笔记为准
+        val noteFile = File(dir, "note.json")
+        noteFile.writeText(noteFile.readText().replace("\"周会\"", "\"周会纪要\""))
+        File(dir, "meta.json").setLastModified(1_000L)
+        noteFile.setLastModified(2_000_000L)
+        assertEquals("周会纪要", NoteRepository(tmp.root).summaries().single().title)
+
+        assertEquals(listOf(n.id), NoteSummary.filter(repo.summaries(), "纪要").map { it.id })
+    }
 }

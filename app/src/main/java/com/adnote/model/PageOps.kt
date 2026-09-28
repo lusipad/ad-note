@@ -84,6 +84,32 @@ object PageOps {
 
     const val MAX_ASPECT = 6f
 
+    /** 高宽比不超过这个值的页面算「标准页」，可以随屏幕调整；更长的是向下延长过的长页。 */
+    private const val STANDARD_ASPECT_MAX = 1.6f
+
+    /**
+     * 让空白页的高宽比与画布一致，这样整页铺满画布、两侧不留灰边（灰边上的笔迹不属于页面）。
+     *
+     * 只处理还没有任何内容的普通笔记页，且页面与画布同为竖向或同为横向；
+     * 已有笔迹、PDF 页、向下延长过的长页都保持原尺寸。宽度不变，只改高度。
+     */
+    fun fitEmptyPageToCanvas(note: Note, index: Int, viewW: Int, viewH: Int): Note {
+        if (!canEditStructure(note) || index !in note.pages.indices || viewW <= 0 || viewH <= 0) return note
+        val p = note.pages[index]
+        if (p.strokes.isNotEmpty() || p.texts.isNotEmpty() || p.images.isNotEmpty()) return note
+        val pagePortrait = p.height >= p.width
+        val viewPortrait = viewH >= viewW
+        if (pagePortrait != viewPortrait) return note
+        val longSide = maxOf(p.width, p.height).toFloat()
+        val shortSide = minOf(p.width, p.height).toFloat()
+        if (longSide / shortSide > STANDARD_ASPECT_MAX) return note
+        val targetH = Math.round(p.width.toFloat() * viewH / viewW)
+        if (kotlin.math.abs(targetH - p.height) <= 2) return note
+        val list = note.pages.toMutableList()
+        list[index] = p.copy(height = targetH)
+        return note.copy(pages = list)
+    }
+
     /** 清空第 [index] 页的全部笔迹。 */
     fun clearStrokes(note: Note, index: Int, now: Long = System.currentTimeMillis()): Note {
         if (index !in note.pages.indices || note.pages[index].strokes.isEmpty()) return note
