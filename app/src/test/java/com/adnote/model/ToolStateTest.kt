@@ -14,9 +14,25 @@ class ToolStateTest {
             penColor = "#DC2626",
             penWidth = 7.5f,
             eraserMode = EraserMode.STROKE,
-            eraserSize = EraserSize.LARGE,
+            eraserRadius = 30f,
         )
         assertEquals(s, ToolState.fromJson(ToolState.toJson(s)))
+    }
+
+    @Test
+    fun oldEraserSizeFieldIsIgnored() {
+        // 旧版保存的是档位名称，现在改为连续半径：旧字段忽略，其余设置照常恢复
+        val s = ToolState.fromJson("""{"tool":"ERASER","eraserSize":"LARGE","penColor":"#DC2626"}""")
+        assertEquals(Tool.ERASER, s.tool)
+        assertEquals("#DC2626", s.penColor)
+        assertEquals(EraserSizes.DEFAULT, s.eraserRadius, 0f)
+    }
+
+    @Test
+    fun eraserRadiusIsClamped() {
+        assertEquals(EraserSizes.MIN, EraserSizes.clamp(0f), 0f)
+        assertEquals(EraserSizes.MAX, EraserSizes.clamp(1000f), 0f)
+        assertEquals(20f, EraserSizes.clamp(20f), 0f)
     }
 
     @Test

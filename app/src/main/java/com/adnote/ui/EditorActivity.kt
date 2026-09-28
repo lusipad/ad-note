@@ -39,7 +39,7 @@ import com.adnote.ink.SelectionOps
 import com.adnote.ink.ShapeRecognizer
 import com.adnote.ink.TextLayout
 import com.adnote.model.EraserMode
-import com.adnote.model.EraserSize
+import com.adnote.model.EraserSizes
 import com.adnote.model.ImageItem
 import com.adnote.model.InkPoint
 import com.adnote.model.Layer
@@ -341,7 +341,15 @@ class EditorActivity : AppCompatActivity() {
         lastPenRegion = null
 
         val listener = object : PenInputListener {
-            override fun onPenDown() = inkCanvas.setPenDown(true)
+            override fun onPenDown() {
+                inkCanvas.setPenDown(true)
+                // 橡皮大小预览还没消失就落笔：直接去掉，不能在书写中途暂停直绘
+                if (eraserPreviewShown) {
+                    eraserPreviewShown = false
+                    handler.removeCallbacks(hideEraserPreview)
+                    inkCanvas.hideEraserCursor()
+                }
+            }
 
             override fun onDrawing(points: List<InkPoint>) {
                 if (points.isEmpty()) inkCanvas.setPenDown(false)
@@ -371,7 +379,8 @@ class EditorActivity : AppCompatActivity() {
                     Tool.PEN, Tool.HIGHLIGHTER, Tool.SHAPE -> handleInk(pts)
                     Tool.ERASER -> finishErase(pts)
                     Tool.LASSO -> if (isTap(pts)) {
-                        inkCanvas.setLassoPath(emptyList())
+                        // 直绘层可能留下一个虚线小点，顺带刷掉
+                        withPenPaused { inkCanvas.setLassoPath(emptyList()) }
                         handleTap(pts[0].x, pts[0].y, byPen = true)
                     } else {
                         finishLasso(pts)
@@ -426,7 +435,7 @@ class EditorActivity : AppCompatActivity() {
                 // 墨水屏上悬停光标每移动一下就要刷新一次屏幕，只在普通彩屏上显示
                 if (isEink) return
                 val px = inkCanvas.toPageX(x); val py = inkCanvas.toPageY(y)
-                val r = if (eraser || tools.tool == Tool.ERASER) tools.eraserSize.radius else tools.activeWidth / 2f
+                val r = if (eraser || tools.tool == Tool.ERASER) tools.eraserRadius else tools.activeWidth / 2f
                 inkCanvas.setHover(px, py, r)
             }
 
@@ -480,32 +489,37 @@ class EditorActivity : AppCompatActivity() {
 
     private fun applyPenInputStyle() {
         val input = penInput ?: return
-        val writing = tools.tool == Tool.PEN || tools.tool == Tool.HIGHLIGHTER || tools.tool == Tool.SHAPE
-        val eraser = tools.tool == Tool.ERASER
+        val tool = tools.tool
+        val writing = tool == Tool.PEN || tool == Tool.HIGHLIGHTER || tool == Tool.SHAPE
         val scale = inkCanvas.viewport.scale
+        val density = resources.displayMetrics.density
         val page = note.pages.getOrNull(currentPageIndex)
-        // PDF 原文或自定义背景图上，纯色轨迹会盖住底图，不能用来预览擦除
+        // PDF 原文或自定义背景图上，纸色轨迹会盖住底图，不能用来预览擦除
         val plainPaper = page != null && !note.isPdf && page.backgroundImage == null
         runCatching {
-            if (eraser && plainPaper) {
-                // 橡皮：让硬件直绘层画一条纸色的粗线，宽度等于橡皮直径，擦过的地方立刻「变白」，
-                // 抬笔后再按真实擦除结果刷新。否则文石固件会用当前笔型画一条细墨线，看起来像在写字
-                input.setPenStyle(PenType.MARKER)
-                input.setStrokeColor(StrokePainter.parseColor(PaperPresets.find(page!!.backgroundColor).hex))
-                input.setStrokeWidth(tools.eraserSize.radius * 2f * scale)
-            } else if (eraser) {
-                // 有底图的页面关闭直绘；万一固件不支持关闭，也只画一条不遮挡内容的细灰线
-                input.setPenStyle(PenType.PENCIL)
-                input.setStrokeColor(StrokePainter.parseColor(ERASER_GUIDE_COLOR))
-                input.setStrokeWidth(2f * scale)
-            } else {
-                input.setPenStyle(tools.activePen)
-                input.setStrokeColor(StrokePainter.parseColor(tools.activeColor))
-                // 直绘层按屏幕像素画，需要乘上当前缩放
-                input.setStrokeWidth(tools.activeWidth * scale)
+            when {
+                tool == Tool.ERASER && plainPaper -> {
+                    // 橡皮：硬件直绘层画一条纸色粗线，宽度等于橡皮直径，擦过的地方立即变白，抬笔后按真实擦除结果刷新
+                    input.setEraserTrailStyle()
+                    input.setStrokeColor(StrokePainter.parseColor(PaperPresets.find(page!!.backgroundColor).hex))
+                    input.setStrokeWidth(tools.eraserRadius * 2f * scale)
+                }
+                tool == Tool.ERASER || tool == Tool.LASSO -> {
+                    // 套索、底图上的橡皮：细虚线显示轨迹，不遮挡内容
+                    input.setDashStyle()
+                    input.setStrokeColor(StrokePainter.parseColor(GUIDE_COLOR))
+                    input.setStrokeWidth(1.5f * density)
+                }
+                else -> {
+                    // 荧光笔用马克笔笔型：文石按「变暗」叠加，不会盖住下面的字；抬笔后换成半透明的最终效果
+                    input.setPenStyle(tools.activePen)
+                    input.setStrokeColor(StrokePainter.parseColor(tools.activeColor))
+                    // 直绘层按屏幕像素画，需要乘上当前缩放
+                    input.setStrokeWidth(tools.activeWidth * scale)
+                }
             }
-            // 普通书写、形状、纯色纸上的橡皮由硬件直绘；荧光笔（半透明）、套索与文字由应用自己绘制
-            input.setRenderEnabled(tools.tool == Tool.PEN || tools.tool == Tool.SHAPE || (eraser && plainPaper))
+            // 文字工具只有点按，不需要画出轨迹；其余工具都由硬件直绘层实时显示
+            input.setRenderEnabled(tool != Tool.TEXT)
             input.setPredictionEnabled(writing)
         }
     }
@@ -532,12 +546,28 @@ class EditorActivity : AppCompatActivity() {
                     applyTools()
                 })
             }
-            Tool.ERASER -> showHint("${tools.eraserMode.displayName} · ${tools.eraserSize.displayName}号  ▾")
+            Tool.ERASER -> {
+                // 擦除方式与大小直接放在工具栏上，圆点越大橡皮越大；「▾」打开连续调节
+                EraserMode.entries.forEach { m ->
+                    layoutQuickColors.addView(Chips.text(this, m.displayName, m == tools.eraserMode) {
+                        tools = tools.copy(eraserMode = m)
+                        applyTools()
+                    })
+                }
+                EraserSizes.PRESETS.forEachIndexed { i, r ->
+                    layoutQuickColors.addView(eraserSizeDot(i, r))
+                }
+                showHint("大小 ▾")
+            }
             Tool.LASSO -> showHint(
                 if (app.clipboard != null) "圈选后可拖动/缩放/旋转 · 长按套索粘贴" else "圈选后可拖动、缩放、旋转、删除、复制"
             )
         }
-        if (tools.tool == Tool.SHAPE) showHint("画完自动规整成直线、矩形、圆")
+        // 当前笔型与粗细显示在色板后面，点一下打开设置（和再点一次工具按钮一样）
+        val width = String.format("%.1f", tools.activeWidth)
+        if (tools.tool == Tool.PEN) showHint("${tools.penType.displayName} · 粗细 $width  ▾")
+        if (tools.tool == Tool.HIGHLIGHTER) showHint("粗细 $width  ▾")
+        if (tools.tool == Tool.SHAPE) showHint("${tools.penType.displayName} · 粗细 $width · 画完自动规整成直线、矩形、圆  ▾")
         if (tools.tool == Tool.TEXT) showHint("点按页面添加文字")
     }
 
@@ -651,7 +681,7 @@ class EditorActivity : AppCompatActivity() {
         val p = page()
         val layer = activeLayer()
         val editable = p.strokes.filter { it.layer == layer }
-        val radius = tools.eraserSize.radius
+        val radius = tools.eraserRadius
         val next = when (tools.eraserMode) {
             EraserMode.PARTIAL -> {
                 val erased = Eraser.erasePartial(editable, path, radius)
@@ -675,7 +705,7 @@ class EditorActivity : AppCompatActivity() {
             return
         }
         val last = points.last()
-        inkCanvas.setEraserCursor(last.x, last.y, tools.eraserSize.radius)
+        inkCanvas.setEraserCursor(last.x, last.y, tools.eraserRadius)
         if (eraseSnapshot == null) {
             eraseSnapshot = page()
             erasedUpTo = 0
@@ -1717,13 +1747,57 @@ class EditorActivity : AppCompatActivity() {
 
     private fun widthToProgress(w: Float): Int = ((w - PenPresets.WIDTH_MIN) * 2).roundToInt().coerceAtLeast(0)
 
+    /** 工具栏上的橡皮档位：圆点按档位由小到大，当前档位实心。 */
+    private fun eraserSizeDot(index: Int, radius: Float): View {
+        val density = resources.displayMetrics.density
+        val n = EraserSizes.PRESETS.size
+        val size = (36 * density).roundToInt()
+        return EraserPreviewView(this).apply {
+            compact = true
+            diameterPx = (8f + 20f * index / (n - 1).coerceAtLeast(1)) * density
+            filled = kotlin.math.abs(tools.eraserRadius - radius) < 0.5f
+            layoutParams = LinearLayout.LayoutParams(size, size)
+            contentDescription = "橡皮大小 ${index + 1}"
+            setOnClickListener { setEraserRadius(radius) }
+        }
+    }
+
+    private fun setEraserRadius(radius: Float) {
+        tools = tools.copy(tool = Tool.ERASER, eraserRadius = EraserSizes.clamp(radius))
+        applyTools()
+        flashEraserPreview()
+    }
+
+    /** 在页面中央按实际大小短暂显示橡皮范围，换了大小马上能看到擦起来有多大。 */
+    private fun flashEraserPreview() {
+        val vp = inkCanvas.viewport
+        val p = page()
+        val cx = vp.toPageX(vp.viewW / 2f).coerceIn(0f, p.width.toFloat())
+        val cy = vp.toPageY(vp.viewH / 2f).coerceIn(0f, p.height.toFloat())
+        handler.removeCallbacks(hideEraserPreview)
+        withPenPaused { inkCanvas.setEraserCursor(cx, cy, tools.eraserRadius) }
+        eraserPreviewShown = true
+        handler.postDelayed(hideEraserPreview, ERASER_PREVIEW_MS)
+    }
+
+    private var eraserPreviewShown = false
+
+    private val hideEraserPreview = Runnable {
+        eraserPreviewShown = false
+        withPenPaused { inkCanvas.hideEraserCursor() }
+    }
+
     private fun showEraserSettingsDialog() {
         val view = layoutInflater.inflate(R.layout.dialog_eraser_settings, null)
         val modeChips = view.findViewById<LinearLayout>(R.id.layoutEraserModeChips)
         val sizeChips = view.findViewById<LinearLayout>(R.id.layoutEraserSizeChips)
         val hint = view.findViewById<TextView>(R.id.tvEraserModeHint)
+        val seek = view.findViewById<SeekBar>(R.id.seekEraserSize)
+        val tvValue = view.findViewById<TextView>(R.id.tvEraserSizeValue)
+        val preview = view.findViewById<EraserPreviewView>(R.id.eraserPreview)
         var mode = tools.eraserMode
-        var size = tools.eraserSize
+        var radius = tools.eraserRadius
+        val scale = inkCanvas.viewport.scale
 
         lateinit var refresh: () -> Unit
         refresh = {
@@ -1736,10 +1810,27 @@ class EditorActivity : AppCompatActivity() {
                 modeChips.addView(Chips.text(this, m.displayName, m == mode) { mode = m; refresh() })
             }
             sizeChips.removeAllViews()
-            EraserSize.entries.forEach { s ->
-                sizeChips.addView(Chips.text(this, s.displayName, s == size) { size = s; refresh() })
+            EraserSizes.PRESETS.forEachIndexed { i, r ->
+                sizeChips.addView(Chips.text(this, "${i + 1} 档", kotlin.math.abs(r - radius) < 0.5f) {
+                    radius = r
+                    seek.progress = radiusToProgress(r)
+                    refresh()
+                })
             }
+            tvValue.text = "直径 ${(radius * 2).roundToInt()}（下方圆圈是按当前缩放在屏幕上的实际大小）"
+            preview.diameterPx = radius * 2f * scale
         }
+        seek.max = radiusToProgress(EraserSizes.MAX)
+        seek.progress = radiusToProgress(radius)
+        seek.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(sb: SeekBar, progress: Int, fromUser: Boolean) {
+                if (!fromUser) return
+                radius = EraserSizes.clamp(EraserSizes.MIN + progress)
+                refresh()
+            }
+            override fun onStartTrackingTouch(sb: SeekBar) = Unit
+            override fun onStopTrackingTouch(sb: SeekBar) = Unit
+        })
         refresh()
 
         var dialog: AlertDialog? = null
@@ -1752,12 +1843,16 @@ class EditorActivity : AppCompatActivity() {
                 .setTitle("橡皮擦设置")
                 .setView(view)
                 .setPositiveButton("确定") { _, _ ->
-                    tools = tools.copy(tool = Tool.ERASER, eraserMode = mode, eraserSize = size)
+                    val changed = radius != tools.eraserRadius
+                    tools = tools.copy(tool = Tool.ERASER, eraserMode = mode, eraserRadius = EraserSizes.clamp(radius))
                     applyTools()
+                    if (changed) flashEraserPreview()
                 }
                 .setNegativeButton("取消", null)
         )
     }
+
+    private fun radiusToProgress(r: Float): Int = (r - EraserSizes.MIN).roundToInt().coerceAtLeast(0)
 
     private fun showEditMetadataDialog() {
         val dialogView = layoutInflater.inflate(R.layout.dialog_edit_note, null)
@@ -1988,7 +2083,9 @@ class EditorActivity : AppCompatActivity() {
         private const val EXTRA_NOTE_ID = "extra_note_id"
         private const val SAVE_DELAY_MS = 1500L
         private val TEXT_SIZES = listOf(24f, 32f, 40f, 56f, 72f, 96f)
-        private const val ERASER_GUIDE_COLOR = "#9CA3AF"
+        /** 套索、橡皮路径提示的颜色。 */
+        private const val GUIDE_COLOR = "#4B5563"
+        private const val ERASER_PREVIEW_MS = 1500L
 
         private const val MENU_INSERT = 1
         private const val MENU_DUPLICATE = 2

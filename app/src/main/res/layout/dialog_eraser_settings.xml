@@ -53,13 +53,34 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:scrollbars="none"
-        android:layout_marginBottom="16dp">
+        android:layout_marginBottom="8dp">
         <LinearLayout
             android:id="@+id/layoutEraserSizeChips"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:orientation="horizontal" />
+            android:orientation="horizontal"
+            android:gravity="center_vertical" />
     </HorizontalScrollView>
+
+    <SeekBar
+        android:id="@+id/seekEraserSize"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="4dp" />
+
+    <TextView
+        android:id="@+id/tvEraserSizeValue"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:textSize="12sp"
+        android:textColor="@color/text_tertiary" />
+
+    <!-- 按屏幕上的实际大小显示橡皮范围 -->
+    <com.adnote.ui.EraserPreviewView
+        android:id="@+id/eraserPreview"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="12dp" />
 
     <TextView
         android:layout_width="wrap_content"
