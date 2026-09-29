@@ -1,5 +1,6 @@
 package com.adnote.recognition
 
+import com.adnote.ink.LineGrouper
 import com.adnote.model.Page
 import com.google.android.gms.tasks.Task
 import com.google.mlkit.common.model.DownloadConditions
@@ -81,19 +82,21 @@ class MlKitRecognizer(
         }
 
         runCatching {
-            val inkBuilder = Ink.builder()
-            for (stroke in page.strokes) {
-                // 荧光笔是标注，不参与文字识别
-                if (stroke.points.isEmpty() || stroke.pen == com.adnote.model.PenType.HIGHLIGHTER) continue
-                val strokeBuilder = Ink.Stroke.builder()
-                for (pt in stroke.points) {
-                    strokeBuilder.addPoint(Ink.Point.create(pt.x, pt.y, pt.t))
+            val lines = LineGrouper.group(page.strokes)
+            val texts = ArrayList<String>(lines.size)
+            for (line in lines) {
+                val inkBuilder = Ink.builder()
+                for (stroke in line) {
+                    val strokeBuilder = Ink.Stroke.builder()
+                    for (pt in stroke.points) {
+                        strokeBuilder.addPoint(Ink.Point.create(pt.x, pt.y, pt.t))
+                    }
+                    inkBuilder.addStroke(strokeBuilder.build())
                 }
-                inkBuilder.addStroke(strokeBuilder.build())
+                val text = client.recognize(inkBuilder.build()).await().candidates.firstOrNull()?.text.orEmpty().trim()
+                if (text.isNotEmpty()) texts += text
             }
-            val ink = inkBuilder.build()
-            val result = client.recognize(ink).await()
-            result.candidates.firstOrNull()?.text.orEmpty()
+            texts.joinToString("\n")
         }
     }
 }

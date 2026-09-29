@@ -9,6 +9,7 @@ import com.adnote.ink.ClipContent
 import com.adnote.model.StylusButtonAction
 import com.adnote.model.ToolState
 import com.adnote.recognition.MlKitRecognizer
+import com.adnote.recognition.RecognitionLanguages
 import com.adnote.recognition.Recognizer
 import com.adnote.storage.NoteRepository
 import com.adnote.sync.SyncEngine
@@ -40,6 +41,10 @@ class AdNoteApp : Application() {
         private set
 
     var preferOnyx: Boolean = true
+        private set
+
+    /** 手写识别语言（ML Kit BCP-47 标签）。 */
+    var recognitionLanguage: String = RecognitionLanguages.DEFAULT
         private set
 
     /** 音量键翻页（墨水屏阅读器常用的实体翻页方式）。 */
@@ -98,7 +103,6 @@ class AdNoteApp : Application() {
         instance = this
 
         repository = NoteRepository(filesDir)
-        recognizer = MlKitRecognizer()
         loadSettings()
     }
 
@@ -119,6 +123,8 @@ class AdNoteApp : Application() {
         }.getOrDefault(StylusButtonAction.ERASER)
         fullRefreshEvery = prefs.getInt("full_refresh_every", 6)
         autoSync = prefs.getBoolean("auto_sync", true)
+        recognitionLanguage = prefs.getString("recognition_language", null) ?: RecognitionLanguages.DEFAULT
+        recognizer = MlKitRecognizer(recognitionLanguage)
 
         syncEngine = if (syncSettings.isConfigured) {
             val client = WebDavClient(
@@ -165,6 +171,12 @@ class AdNoteApp : Application() {
     }
 
     fun setFullRefreshEvery(v: Int) { fullRefreshEvery = v; prefs().edit().putInt("full_refresh_every", v).apply() }
+
+    fun setRecognitionLanguage(tag: String) {
+        recognitionLanguage = tag
+        prefs().edit().putString("recognition_language", tag).apply()
+        recognizer = MlKitRecognizer(tag)
+    }
 
     fun setAutoSync(v: Boolean) { autoSync = v; prefs().edit().putBoolean("auto_sync", v).apply() }
 

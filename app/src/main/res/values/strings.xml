@@ -35,7 +35,8 @@
     <string name="settings_pen_channel">当前画笔通道：</string>
     <string name="settings_model_header">手写识别模型</string>
     <string name="settings_model_status">模型状态：</string>
-    <string name="settings_download_model">下载手写模型 (中文简体)</string>
+    <string name="settings_download_model">下载当前语言的手写模型</string>
+    <string name="settings_recognition_language">识别语言</string>
     <string name="settings_full_refresh_test">全刷墨水屏</string>
     <string name="shortcut_quick_note">速记</string>
     <string name="shortcut_quick_note_long">新建速记笔记</string>

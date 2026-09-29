@@ -13,6 +13,7 @@ import com.adnote.model.StylusButtonAction
 import com.adnote.pen.DeviceDetector
 import com.adnote.pen.EinkRefresher
 import com.adnote.pen.PenInputFactory
+import com.adnote.recognition.RecognitionLanguages
 import com.adnote.sync.LocalState
 import com.adnote.sync.RemoteNoteInfo
 import com.adnote.sync.RestoreEngine
@@ -46,6 +47,7 @@ class SettingsActivity : AppCompatActivity() {
     private lateinit var btnFullRefreshTest: Button
     private lateinit var tvModelStatus: TextView
     private lateinit var btnDownloadModel: Button
+    private lateinit var btnRecognitionLanguage: Button
     private lateinit var btnRestoreFromCloud: Button
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -81,6 +83,7 @@ class SettingsActivity : AppCompatActivity() {
         btnFullRefreshTest = findViewById(R.id.btnFullRefreshTest)
         tvModelStatus = findViewById(R.id.tvModelStatus)
         btnDownloadModel = findViewById(R.id.btnDownloadModel)
+        btnRecognitionLanguage = findViewById(R.id.btnRecognitionLanguage)
         btnRestoreFromCloud = findViewById(R.id.btnRestoreFromCloud)
     }
 
@@ -88,6 +91,7 @@ class SettingsActivity : AppCompatActivity() {
         val app = AdNoteApp.instance
         btnStylusButton.text = "笔身按键：${app.stylusButtonAction.displayName}"
         btnFullRefreshEvery.text = "翻页全刷：" + if (app.fullRefreshEvery == 0) "从不" else "每 ${app.fullRefreshEvery} 页"
+        btnRecognitionLanguage.text = "识别语言：${RecognitionLanguages.byTag(app.recognitionLanguage).displayName}"
     }
 
     private fun loadCurrentSettings() {
@@ -208,6 +212,18 @@ class SettingsActivity : AppCompatActivity() {
             Toast.makeText(this, "已触发全刷刷新", Toast.LENGTH_SHORT).show()
         }
 
+        btnRecognitionLanguage.setOnClickListener {
+            val langs = RecognitionLanguages.ALL
+            androidx.appcompat.app.AlertDialog.Builder(this)
+                .setTitle("手写识别语言")
+                .setItems(langs.map { it.displayName }.toTypedArray()) { _, which ->
+                    AdNoteApp.instance.setRecognitionLanguage(langs[which].tag)
+                    updateOptionButtons()
+                    checkStatus()
+                }
+                .show()
+        }
+
         btnDownloadModel.setOnClickListener {
             Toast.makeText(this, "正在下载手写识别模型（需要访问 Google 服务）...", Toast.LENGTH_SHORT).show()
             lifecycleScope.launch {
@@ -278,10 +294,11 @@ class SettingsActivity : AppCompatActivity() {
 
         lifecycleScope.launch {
             val downloaded = AdNoteApp.instance.recognizer.isModelDownloaded()
+            val lang = RecognitionLanguages.byTag(AdNoteApp.instance.recognitionLanguage)
             tvModelStatus.text = if (downloaded) {
-                "模型状态：已下载并可用 (zh-Hani-CN)"
+                "模型状态：已下载并可用（${lang.displayName}）"
             } else {
-                "模型状态：未下载（首次识别前需联网下载）"
+                "模型状态：未下载（${lang.displayName}，首次识别前需联网下载）"
             }
         }
     }
