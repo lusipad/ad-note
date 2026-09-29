@@ -154,21 +154,60 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showNoteActions(note: Note) {
-        val actions = listOf("设置封面颜色", if (note.isLocked) "修改或解除 PIN 锁" else "用 PIN 锁定", "移到回收站")
+        val actions = listOf(
+            "编辑标题、文件夹、标签",
+            "设置封面颜色",
+            if (note.isLocked) "修改或解除 PIN 锁" else "用 PIN 锁定",
+            "移到回收站",
+        )
         AlertDialog.Builder(this)
             .setTitle(note.title)
             .setItems(actions.toTypedArray()) { _, which ->
                 when (which) {
-                    0 -> showCoverDialog(note)
-                    1 -> if (note.isLocked) {
+                    0 -> showEditNoteDialog(note)
+                    1 -> showCoverDialog(note)
+                    2 -> if (note.isLocked) {
                         askPin("输入当前 PIN") { pin ->
                             if (PinLock.verify(pin, note.lockHash)) showSetPinDialog(note, allowRemove = true)
                             else Toast.makeText(this, "PIN 不正确", Toast.LENGTH_SHORT).show()
                         }
                     } else showSetPinDialog(note, allowRemove = false)
-                    2 -> showDeleteNoteDialog(note)
+                    3 -> showDeleteNoteDialog(note)
                 }
             }
+            .show()
+    }
+
+    /** 与编辑器里的「编辑笔记属性」相同的表单，改完直接落盘并刷新列表。 */
+    private fun showEditNoteDialog(note: Note) {
+        val dialogView = layoutInflater.inflate(R.layout.dialog_edit_note, null)
+        val etTitle = dialogView.findViewById<EditText>(R.id.etDialogTitle)
+        val etFolder = dialogView.findViewById<EditText>(R.id.etDialogFolder)
+        val etTags = dialogView.findViewById<EditText>(R.id.etDialogTags)
+        etTitle.setText(note.title)
+        etFolder.setText(note.folder)
+        etTags.setText(note.tags.joinToString(", "))
+
+        AlertDialog.Builder(this)
+            .setTitle("编辑笔记属性")
+            .setView(dialogView)
+            .setPositiveButton("保存") { _, _ ->
+                val newTitle = etTitle.text.toString().trim().ifEmpty { note.title }
+                val newFolder = etFolder.text.toString().trim().trim('/').ifEmpty { Note.DEFAULT_FOLDER }
+                val newTags = etTags.text.toString().split(',', '，')
+                    .map { it.trim().removePrefix("#") }
+                    .filter { it.isNotEmpty() }
+                if (newTitle == note.title && newFolder == note.folder && newTags == note.tags) return@setPositiveButton
+                lifecycleScope.launch {
+                    withContext(Dispatchers.IO) {
+                        val repo = AdNoteApp.instance.repository
+                        val latest = repo.load(note.id) ?: return@withContext
+                        repo.save(latest.copy(title = newTitle, folder = newFolder, tags = newTags, updatedAt = System.currentTimeMillis()))
+                    }
+                    reload()
+                }
+            }
+            .setNegativeButton("取消", null)
             .show()
     }
 
