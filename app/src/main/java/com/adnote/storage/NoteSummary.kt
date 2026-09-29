@@ -48,7 +48,7 @@ data class NoteSummary(
             return items.filter { n ->
                 (tag == null || tag in n.tags) &&
                     (folder == null || n.folder == folder || n.folder.startsWith("$folder/")) &&
-                    (q.isEmpty() || n.searchText.lowercase().contains(q))
+                    (q.isEmpty() || (if (n.isLocked) n.title else n.searchText).lowercase().contains(q))
             }
         }
 

@@ -336,7 +336,7 @@ class NoteRepository(private val root: File) {
             return notes.filter { n ->
                 (tag == null || tag in n.tags) &&
                     (folder == null || n.folder == folder || n.folder.startsWith("$folder/")) &&
-                    (q.isEmpty() || n.searchableText().lowercase().contains(q))
+                    (q.isEmpty() || (if (n.isLocked) n.title else n.searchableText()).lowercase().contains(q))
             }
         }
 
