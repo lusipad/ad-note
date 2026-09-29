@@ -44,10 +44,12 @@ object LineGrouper {
         val medianHeight = sortedHeights[sortedHeights.size / 2]
         val minHeight = max(medianHeight * minHeightRatio, 1f)
 
-        class Line(var top: Float, var bottom: Float, val strokes: MutableList<Stroke>)
+        class Line(var top: Float, var bottom: Float, val strokes: MutableList<Pair<Int, Stroke>>, var flat: Boolean)
 
         val lines = ArrayList<Line>()
-        for ((stroke, b) in items) {
+        for ((index, item) in items.withIndex()) {
+            val (stroke, b) = item
+            val isFlat = b.height < minHeight
             val pad = max(0f, (minHeight - b.height) / 2f)
             val top = b.top - pad
             val bottom = b.bottom + pad
@@ -63,13 +65,28 @@ object LineGrouper {
                 }
             }
             if (best != null && bestRatio >= minOverlap) {
-                best.strokes += stroke
+                best.strokes += index to stroke
+                best.flat = best.flat && isFlat
                 best.top = min(best.top, top)
                 best.bottom = max(best.bottom, bottom)
             } else {
-                lines += Line(top, bottom, mutableListOf(stroke))
+                lines += Line(top, bottom, mutableListOf(index to stroke), isFlat)
             }
         }
-        return lines.sortedBy { it.top }.map { it.strokes }
+
+        // 只含扁平笔画（下划线、横线、点）的行不单独成行，并入垂直距离最近的正常行；太远则保留。
+        fun gap(a: Line, b: Line) = max(0f, max(a.top, b.top) - min(a.bottom, b.bottom))
+        val textLines = lines.filter { !it.flat }
+        val result = if (textLines.isEmpty()) lines else {
+            for (flatLine in lines.filter { it.flat }) {
+                val target = textLines.minByOrNull { gap(flatLine, it) } ?: continue
+                if (gap(flatLine, target) <= medianHeight) {
+                    target.strokes += flatLine.strokes
+                    flatLine.strokes.clear()
+                }
+            }
+            lines.filter { it.strokes.isNotEmpty() }
+        }
+        return result.sortedBy { it.top }.map { line -> line.strokes.sortedBy { it.first }.map { it.second } }
     }
 }

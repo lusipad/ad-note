@@ -79,4 +79,31 @@ class LineGrouperTest {
         )
         assertEquals(1, LineGrouper.group(strokes).size)
     }
+
+    private fun row() = listOf(
+        stroke("r1", 10f, 100f, 40f, 140f),
+        stroke("r2", 50f, 100f, 80f, 140f),
+        stroke("r3", 90f, 100f, 120f, 140f),
+    )
+
+    @Test
+    fun underlineWrittenLastJoinsRow() {
+        val lines = LineGrouper.group(row() + stroke("u", 10f, 146f, 120f, 147f))
+        assertEquals(1, lines.size)
+        assertEquals(listOf("r1", "r2", "r3", "u"), lines[0].map { it.id })
+    }
+
+    @Test
+    fun underlineWrittenFirstJoinsRow() {
+        val lines = LineGrouper.group(listOf(stroke("u", 10f, 146f, 120f, 147f)) + row())
+        assertEquals(1, lines.size)
+        assertEquals(listOf("u", "r1", "r2", "r3"), lines[0].map { it.id })
+    }
+
+    @Test
+    fun farFlatStrokeStaysSeparate() {
+        val lines = LineGrouper.group(row() + stroke("far", 10f, 440f, 120f, 441f))
+        assertEquals(2, lines.size)
+        assertEquals(listOf("far"), lines[1].map { it.id })
+    }
 }
