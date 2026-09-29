@@ -129,4 +129,44 @@ class RestoreEngineTest {
         assertEquals(2, local.pages[0].strokes[0].points.size)
         assertEquals(0, local.coordVersion)
     }
+
+    @Test
+    fun testScanKeepsNewestCopyPerNoteId() {
+        val old = Note(id = "eeee", title = "重复", folder = "旧", pages = listOf(Page(width = 10, height = 10)), createdAt = 1L, updatedAt = 300L)
+        val new = old.copy(folder = "新", updatedAt = 800L)
+        putRemoteNote("旧", old)
+        putRemoteNote("新", new)
+
+        val found = engine.scan()
+        assertEquals(1, found.size)
+        assertEquals(800L, found[0].note.updatedAt)
+        assertEquals(1, engine.restore(found).restored)
+        val local = repository.load("eeee")!!
+        assertEquals(800L, local.updatedAt)
+        assertEquals("新/重复.md", local.sync.remoteMdPath)
+    }
+
+    @Test
+    fun testScanSkipsNoteWhoseIdDiffersFromDirectory() {
+        val note = Note(id = "../x", title = "伪造", folder = "f", pages = listOf(Page(width = 10, height = 10)), createdAt = 1L, updatedAt = 1L)
+        putRemoteNote("f", note.copy(id = "ffff"))
+        files["f/_ink/ffff/ink.json"] = NoteJson.encodeToString(Note.serializer(), note).toByteArray()
+
+        assertTrue(engine.scan().isEmpty())
+    }
+
+    @Test
+    fun testRestoreRejectsAttachmentOutsideNoteDirectory() {
+        val note = Note(
+            id = "gggg", title = "越界", folder = "f", createdAt = 1L, updatedAt = 5L,
+            pages = listOf(Page(width = 10, height = 10, images = listOf(com.adnote.model.ImageItem(path = "../../evil.jpg", x = 0f, y = 0f, width = 1f, height = 1f)))),
+        )
+        putRemoteNote("f", note, extra = mapOf("../../evil.jpg" to byteArrayOf(1)))
+        files["evil.jpg"] = byteArrayOf(1)
+
+        assertEquals(1, engine.restore(engine.scan()).restored)
+        assertTrue(!java.io.File(tempFolder.root, "evil.jpg").exists())
+        assertTrue(!java.io.File(tempFolder.root, "notes/evil.jpg").exists())
+        assertTrue(repository.load("gggg")!!.sync.uploadedAssets.isEmpty())
+    }
 }

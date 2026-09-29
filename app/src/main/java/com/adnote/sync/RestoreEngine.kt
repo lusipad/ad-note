@@ -35,7 +35,10 @@ class RestoreEngine(
     fun scan(maxDepth: Int = 6): List<RemoteNoteInfo> {
         val found = ArrayList<RemoteNoteInfo>()
         walk("", 0, maxDepth, found)
-        return found.sortedByDescending { it.note.updatedAt }
+        // 同一篇笔记在远端可能有多份（旧目录残留、手工复制）：只保留 updatedAt 最新的一份
+        return found.groupBy { it.note.id }
+            .map { (_, copies) -> copies.maxByOrNull { it.note.updatedAt }!! }
+            .sortedByDescending { it.note.updatedAt }
     }
 
     private fun walk(dir: String, depth: Int, maxDepth: Int, out: MutableList<RemoteNoteInfo>) {
@@ -45,6 +48,9 @@ class RestoreEngine(
             for (noteDir in webDavClient.list(inkRoot.path).filter { it.isDir }) {
                 val json = runCatching { webDavClient.get("${noteDir.path}/ink.json") }.getOrNull() ?: continue
                 val note = runCatching { NoteJson.decodeFromString(Note.serializer(), json.body.orEmpty()) }.getOrNull() ?: continue
+                // ink.json 来自远端，id 会被当作本地目录名：必须与所在目录同名且不含路径分隔符
+                val id = note.id
+                if (id.isEmpty() || id != noteDir.name || id.contains('/') || id.contains('\\')|| id.contains("..")) continue
                 out += RemoteNoteInfo(note, dir, noteDir.path, localState(note))
             }
         }
@@ -81,7 +87,10 @@ class RestoreEngine(
         val dir = repository.getNoteDir(note.id).apply { mkdirs() }
         val downloaded = ArrayList<String>()
         for (rel in NoteAssets.referenced(note)) {
-            if (webDavClient.download("${info.inkDir}/$rel", File(dir, rel))) downloaded += rel
+            // 附件路径同样来自远端：目标必须落在笔记目录内
+            val target = File(dir, rel)
+            if (!target.canonicalPath.startsWith(dir.canonicalPath + File.separator)) continue
+            if (webDavClient.download("${info.inkDir}/$rel", target)) downloaded += rel
         }
         val mdName = "${RemotePaths.sanitize(note.title)}.md"
         val mdPath = if (info.folder.isEmpty()) mdName else "${info.folder}/$mdName"
