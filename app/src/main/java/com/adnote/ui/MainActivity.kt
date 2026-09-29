@@ -579,10 +579,11 @@ class MainActivity : AppCompatActivity() {
             } finally {
                 syncing = false
             }
+            val pulledText = if (result.pulled > 0) "，拉取 Obsidian 修改 ${result.pulled} 篇" else ""
             val msg = if (result.failed == 0) {
-                "同步完成：成功 ${result.success} 篇笔记"
+                "同步完成：成功 ${result.success} 篇笔记$pulledText"
             } else {
-                "同步完成：成功 ${result.success}，失败 ${result.failed}\n错误: ${result.firstError}"
+                "同步完成：成功 ${result.success}，失败 ${result.failed}$pulledText\n错误: ${result.firstError}"
             }
             Toast.makeText(this@MainActivity, msg, Toast.LENGTH_LONG).show()
             reload()

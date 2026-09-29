@@ -504,4 +504,92 @@ tags: [共同, 远端新增]
         assertTrue(repository.tombstones().isEmpty())
         assertEquals("工作/新名.md", repository.load("mv1")!!.sync.remoteMdPath)
     }
+
+    /** 内存 WebDAV：按路径存内容与 ETag，支持 PROPFIND Depth 1。 */
+    private inner class MemoryDav : Dispatcher() {
+        val files = ConcurrentHashMap<String, Pair<String, String>>() // 相对根目录路径 -> (内容, etag)
+        private fun rel(request: RecordedRequest) =
+            java.net.URLDecoder.decode(request.path.orEmpty(), "UTF-8").removePrefix("/AdNote").trim('/')
+
+        override fun dispatch(request: RecordedRequest): MockResponse {
+            val p = rel(request)
+            return when (request.method) {
+                "MKCOL" -> MockResponse().setResponseCode(201)
+                "GET" -> files[p]?.let { MockResponse().setResponseCode(200).setBody(it.first).setHeader("ETag", it.second) }
+                    ?: MockResponse().setResponseCode(404)
+                "PUT" -> {
+                    val etag = "\"v${files.size + 1}-${System.nanoTime()}\""
+                    files[p] = request.body.readUtf8() to etag
+                    MockResponse().setResponseCode(201).setHeader("ETag", etag)
+                }
+                "DELETE" -> { files.remove(p); MockResponse().setResponseCode(204) }
+                "PROPFIND" -> {
+                    val children = files.keys.filter { it.substringBeforeLast('/', "") == p }
+                    val xml = buildString {
+                        append("""<?xml version="1.0"?><D:multistatus xmlns:D="DAV:">""")
+                        append("<D:response><D:href>/AdNote/$p/</D:href><D:propstat><D:prop><D:resourcetype><D:collection/></D:resourcetype></D:prop></D:propstat></D:response>")
+                        for (c in children) {
+                            append("<D:response><D:href>/AdNote/$c</D:href><D:propstat><D:prop><D:resourcetype/>")
+                            append("<D:getetag>${files[c]!!.second}</D:getetag></D:prop></D:propstat></D:response>")
+                        }
+                        append("</D:multistatus>")
+                    }
+                    MockResponse().setResponseCode(207).setBody(xml)
+                }
+                else -> MockResponse().setResponseCode(200)
+            }
+        }
+    }
+
+    /** 模拟在 Obsidian 里改 tags、在用户区加正文，生成区原样保留。 */
+    private fun withObsidianEdits(md: String, tags: String, userText: String): String {
+        val fm = md.substringBefore("\n---\n", "")
+        val body = md.substringAfter("\n---\n")
+        val newFm = fm.lines().filterNot { it.startsWith("tags:") || it.startsWith("  - ") }.joinToString("\n") + "\ntags: [$tags]"
+        return "$newFm\n---\n$userText\n\n" + body.substring(body.indexOf("<!-- adnote:begin"))
+    }
+
+    @Test
+    fun testPullBringsObsidianEditsToCleanNote() {
+        val dav = MemoryDav()
+        server.dispatcher = dav
+        val created = repository.create("拉取", "工作", 10, 10)
+        repository.save(created.copy(tags = listOf("设备")))
+        assertEquals(1, syncEngine.sync().success)
+        val mdPath = repository.load(created.id)!!.sync.remoteMdPath!!
+        assertFalse(repository.load(created.id)!!.isDirty)
+
+        // 在 Obsidian 里改标签、加正文
+        val (md, _) = dav.files[mdPath]!!
+        dav.files[mdPath] = withObsidianEdits(md, "设备, 电脑", "电脑上补充的想法") to "\"edited-on-pc\""
+
+        val result = syncEngine.sync()
+        assertEquals(1, result.pulled)
+        val pulled = repository.load(created.id)!!
+        assertEquals(listOf("设备", "电脑"), pulled.tags)
+        assertEquals("电脑上补充的想法", pulled.userMarkdown)
+        assertEquals("\"edited-on-pc\"", pulled.sync.remoteMdEtag)
+
+        // 再同步一次：ETag 相同，不再拉取
+        assertEquals(0, syncEngine.sync().pulled)
+    }
+
+    @Test
+    fun testPullSkipsLocallyDirtyNote() {
+        val dav = MemoryDav()
+        server.dispatcher = dav
+        val note = repository.create("脏笔记", "工作", 10, 10)
+        syncEngine.sync()
+        val mdPath = repository.load(note.id)!!.sync.remoteMdPath!!
+        val (md, _) = dav.files[mdPath]!!
+        dav.files[mdPath] = withObsidianEdits(md, "电脑", "正文") to "\"pc\""
+
+        // 本地又改了：这篇会走推送合并，不走拉取
+        val local = repository.load(note.id)!!
+        repository.save(local.copy(tags = listOf("本地"), updatedAt = maxOf(local.updatedAt, local.sync.lastSyncedAt) + 1000))
+        val result = syncEngine.sync()
+        assertEquals(0, result.pulled)
+        assertEquals(1, result.success)
+        assertEquals(listOf("本地", "电脑"), repository.load(note.id)!!.tags)
+    }
 }

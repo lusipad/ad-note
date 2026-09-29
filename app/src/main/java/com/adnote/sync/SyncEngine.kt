@@ -13,6 +13,8 @@ data class SyncResult(
     val success: Int,
     val failed: Int,
     val firstError: String? = null,
+    /** 拉取阶段从 Obsidian 端带回修改的笔记数。 */
+    val pulled: Int = 0,
 )
 
 class SyncEngine(
@@ -57,6 +59,13 @@ class SyncEngine(
             }
         }
 
+        // 3. 拉取：本地没改、远端可能在 Obsidian 里改过的笔记
+        val pulled = try {
+            pullRemoteEdits(allNotes.filter { it !in dirtyNotes && it.sync.remoteMdPath != null })
+        } catch (e: WebDavAuthException) {
+            return SyncResult(total = dirtyNotes.size, success = successCount, failed = failedCount, firstError = e.message)
+        }
+
         // 本次同步中登记的改名残留，顺手清掉
         processTombstones()
         return SyncResult(
@@ -64,7 +73,57 @@ class SyncEngine(
             success = successCount,
             failed = failedCount,
             firstError = firstError,
+            pulled = pulled,
         )
+    }
+
+    /**
+     * 按远端文件夹各做一次 PROPFIND 拿 ETag；ETag 不同或拿不到 ETag 的再 GET，
+     * 用内容哈希确认变化后合并标签、采用远端正文。合并后标签与远端不同时标记待推送。
+     */
+    private fun pullRemoteEdits(notes: List<Note>): Int {
+        var pulled = 0
+        val byFolder = notes.groupBy { it.sync.remoteMdPath!!.substringBeforeLast('/', "") }
+        for ((folder, group) in byFolder) {
+            val entries = try {
+                webDavClient.list(folder).associateBy { it.path }
+            } catch (e: WebDavAuthException) {
+                throw e
+            } catch (_: Exception) {
+                continue
+            }
+            for (note in group) {
+                val mdPath = note.sync.remoteMdPath!!
+                val entry = entries[mdPath] ?: continue
+                val etagSame = entry.etag != null && note.sync.remoteMdEtag != null && entry.etag == note.sync.remoteMdEtag
+                if (etagSame) continue
+                val resp = runCatching { webDavClient.get(mdPath) }.getOrNull() ?: continue
+                val body = resp.body.orEmpty()
+                if (!RemoteChange.detect(note.sync.remoteMdEtag, note.sync.remoteMdHash, resp.etag, body)) continue
+
+                val latest = repository.load(note.id) ?: continue
+                if (latest.isDirty) continue
+                val parsed = MarkdownComposer.parse(body)
+                val remoteTags = parsed.tags ?: emptyList()
+                val tags = TagMerge.merge(latest.sync.syncedTags, latest.tags, remoteTags)
+                val userMd = MarkdownComposer.userContent(parsed) ?: latest.userMarkdown
+                val needsPush = tags != remoteTags
+                repository.save(
+                    latest.copy(
+                        tags = tags,
+                        userMarkdown = userMd,
+                        updatedAt = if (needsPush) System.currentTimeMillis() else latest.updatedAt,
+                        sync = latest.sync.copy(
+                            remoteMdEtag = resp.etag ?: latest.sync.remoteMdEtag,
+                            remoteMdHash = ContentHash.sha256(body),
+                            syncedTags = if (needsPush) latest.sync.syncedTags else tags,
+                        ),
+                    )
+                )
+                pulled++
+            }
+        }
+        return pulled
     }
 
     /** 逐条删除墓碑对应的远端文件；认证失败返回错误信息，其余失败留待下次。 */
