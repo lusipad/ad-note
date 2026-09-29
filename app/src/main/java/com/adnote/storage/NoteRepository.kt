@@ -275,6 +275,19 @@ class NoteRepository(private val root: File) {
         return restored
     }
 
+    /**
+     * 从云端导入（覆盖本地同 id 的笔记）：丢掉排队中的保存与缓存的同步状态，
+     * 清掉回收站副本和墓碑，然后落盘。附件文件由调用方事先写到笔记目录。
+     */
+    fun importNote(note: Note) {
+        flush()
+        pending.remove(note.id)
+        syncStates.remove(note.id)
+        File(trashDir, note.id).deleteRecursively()
+        clearTombstone(note.id)
+        save(note)
+    }
+
     /** 永久删除回收站中的笔记。 */
     fun purge(id: String) {
         File(trashDir, id).deleteRecursively()

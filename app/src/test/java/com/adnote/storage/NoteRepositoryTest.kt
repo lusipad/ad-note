@@ -254,4 +254,24 @@ class NoteRepositoryTrashTest {
 
         assertEquals(listOf(n.id), NoteSummary.filter(repo.summaries(), "纪要").map { it.id })
     }
+
+    @Test
+    fun testImportNoteReplacesTrashAndTombstone() {
+        val repo = NoteRepository(tmp.root)
+        val note = repo.create("导入", "f", 10, 10)
+        val synced = note.copy(sync = SyncState(lastSyncedAt = 100L, remoteMdPath = "f/导入.md"))
+        repo.save(synced)
+        repo.moveToTrash(synced, "f/_ink/${note.id}")
+        assertEquals(1, repo.tombstones().size)
+        assertEquals(1, repo.trashCount())
+
+        val fromCloud = synced.copy(title = "云端版本", updatedAt = 999L, sync = SyncState(lastSyncedAt = 999L, remoteMdPath = "f/云端版本.md"))
+        repo.importNote(fromCloud)
+
+        assertEquals(0, repo.trashCount())
+        assertTrue(repo.tombstones().isEmpty())
+        val loaded = repo.load(note.id)!!
+        assertEquals("云端版本", loaded.title)
+        assertEquals("f/云端版本.md", loaded.sync.remoteMdPath)
+    }
 }
