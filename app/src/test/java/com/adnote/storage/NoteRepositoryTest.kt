@@ -128,6 +128,61 @@ class NoteRepositoryTest {
         repo.clearTombstone(tombs[0].noteId)
         assertTrue(repo.tombstones().isEmpty())
     }
+
+    @Test
+    fun testRenameFolderIncludesSubfolders() {
+        val repo = NoteRepository(tempFolder.root)
+        val a = repo.create("a", "工作", 10, 10)
+        val b = repo.create("b", "工作/周会", 10, 10)
+        val c = repo.create("c", "读书", 10, 10)
+
+        val n = repo.renameFolder("工作", "公司", now = 5000L)
+        assertEquals(2, n)
+        assertEquals("公司", repo.load(a.id)!!.folder)
+        assertEquals("公司/周会", repo.load(b.id)!!.folder)
+        assertEquals("读书", repo.load(c.id)!!.folder)
+        assertEquals(5000L, repo.load(a.id)!!.updatedAt)
+        assertEquals(0, repo.renameFolder("公司", "公司"))
+    }
+
+    @Test
+    fun testRenameNormalizesInput() {
+        val repo = NoteRepository(tempFolder.root)
+        val a = repo.create("a", "工作", 10, 10)
+        assertEquals(1, repo.renameFolder(" /工作/ ", " 公司/ "))
+        assertEquals("公司", repo.load(a.id)!!.folder)
+        assertEquals(0, repo.renameFolder("公司", "  "))
+    }
+
+    @Test
+    fun testRenameIntoExistingFolderMerges() {
+        val repo = NoteRepository(tempFolder.root)
+        val a = repo.create("a", "工作", 10, 10)
+        val b = repo.create("b", "读书", 10, 10)
+        assertEquals(1, repo.renameFolder("工作", "读书"))
+        assertEquals("读书", repo.load(a.id)!!.folder)
+        assertEquals("读书", repo.load(b.id)!!.folder)
+        assertEquals(listOf("收件箱", "读书"), repo.allFolders())
+    }
+
+    @Test
+    fun testDissolveFolderMovesToInbox() {
+        val repo = NoteRepository(tempFolder.root)
+        val a = repo.create("a", "工作", 10, 10)
+        val b = repo.create("b", "工作/周会", 10, 10)
+        assertEquals(2, repo.dissolveFolder("工作", now = 7000L))
+        assertEquals("收件箱", repo.load(a.id)!!.folder)
+        assertEquals("收件箱", repo.load(b.id)!!.folder)
+        assertEquals(7000L, repo.load(b.id)!!.updatedAt)
+    }
+
+    @Test
+    fun testDissolveInboxIsNoop() {
+        val repo = NoteRepository(tempFolder.root)
+        val a = repo.create("a", "收件箱", 10, 10)
+        assertEquals(0, repo.dissolveFolder("收件箱"))
+        assertEquals("收件箱", repo.load(a.id)!!.folder)
+    }
 }
 
 class NoteRepositoryTrashTest {

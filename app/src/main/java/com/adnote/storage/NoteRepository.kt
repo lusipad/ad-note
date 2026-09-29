@@ -326,6 +326,42 @@ class NoteRepository(private val root: File) {
 
     fun allFolders(): List<String> = foldersOf(list())
 
+    /**
+     * 重命名文件夹（含其子文件夹）。返回受影响的笔记数。
+     * 受影响笔记 updatedAt 更新为 [now]，因此变为待同步，下次同步会 MOVE 远端文件。
+     * 目标文件夹已存在时相当于合并。
+     */
+    fun renameFolder(from: String, to: String, now: Long = System.currentTimeMillis()): Int {
+        val f = from.trim().trim('/')
+        val t = to.trim().trim('/')
+        if (f.isEmpty() || t.isEmpty() || f == t) return 0
+        var n = 0
+        for (note in list()) {
+            val newFolder = when {
+                note.folder == f -> t
+                note.folder.startsWith("$f/") -> t + note.folder.removePrefix(f)
+                else -> continue
+            }
+            save(note.copy(folder = newFolder, updatedAt = now))
+            n++
+        }
+        return n
+    }
+
+    /** 解散文件夹：其中（含子文件夹）的笔记全部移到收件箱。收件箱本身不能解散。 */
+    fun dissolveFolder(folder: String, now: Long = System.currentTimeMillis()): Int {
+        val f = folder.trim().trim('/')
+        if (f.isEmpty() || f == Note.DEFAULT_FOLDER) return 0
+        var n = 0
+        for (note in list()) {
+            if (note.folder != f && !note.folder.startsWith("$f/")) continue
+            save(note.copy(folder = Note.DEFAULT_FOLDER, updatedAt = now))
+            n++
+        }
+        return n
+    }
+
+
     companion object {
         private const val DELETED_MARK = ".deleted_at"
         private const val META_FILE = "meta.json"
