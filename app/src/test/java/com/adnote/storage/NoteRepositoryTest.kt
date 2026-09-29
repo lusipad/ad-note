@@ -112,6 +112,22 @@ class NoteRepositoryTest {
         assertNotNull(loaded)
         assertEquals("重要笔记原版", loaded?.title)
     }
+
+    @Test
+    fun testAddRemoteCleanupCreatesTombstoneWithoutTouchingNote() {
+        val repo = NoteRepository(tempFolder.root)
+        val note = repo.create("改名", "工作", 100, 100)
+        repo.addRemoteCleanup(note.id, "工作/旧名.md", "工作/_ink/${note.id}")
+
+        val tombs = repo.tombstones()
+        assertEquals(1, tombs.size)
+        assertTrue(tombs[0].noteId.startsWith("${note.id}-cleanup-"))
+        assertEquals("工作/旧名.md", tombs[0].remoteMdPath)
+        assertNotNull(repo.load(note.id))
+
+        repo.clearTombstone(tombs[0].noteId)
+        assertTrue(repo.tombstones().isEmpty())
+    }
 }
 
 class NoteRepositoryTrashTest {

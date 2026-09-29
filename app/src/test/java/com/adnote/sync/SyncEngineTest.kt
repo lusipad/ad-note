@@ -417,4 +417,36 @@ tags: [共同, 远端新增]
         n = repository.load("noteEtag")!!
         assertEquals("本地新正文", n.userMarkdown)
     }
+
+    @Test
+    fun testFailedMoveSchedulesRemoteDelete() {
+        val deleted = java.util.concurrent.CopyOnWriteArrayList<String>()
+        server.dispatcher = object : Dispatcher() {
+            override fun dispatch(request: RecordedRequest): MockResponse {
+                val path = java.net.URLDecoder.decode(request.path.orEmpty(), "UTF-8")
+                return when (request.method) {
+                    "MKCOL" -> MockResponse().setResponseCode(201)
+                    "MOVE" -> MockResponse().setResponseCode(500)
+                    "GET" -> MockResponse().setResponseCode(404)
+                    "PUT" -> MockResponse().setResponseCode(201).setHeader("ETag", "\"e\"")
+                    "DELETE" -> { deleted += path; MockResponse().setResponseCode(204) }
+                    else -> MockResponse().setResponseCode(200)
+                }
+            }
+        }
+        val note = com.adnote.model.Note(
+            id = "mv1", title = "新名", folder = "工作",
+            pages = listOf(com.adnote.model.Page(width = 10, height = 10)),
+            createdAt = 1L, updatedAt = 2000L,
+            sync = SyncState(lastSyncedAt = 1000L, remoteMdPath = "工作/旧名.md", remoteMdEtag = "\"x\""),
+        )
+        repository.save(note)
+
+        val result = syncEngine.sync()
+        assertEquals(1, result.success)
+        // 同步结束前就尝试清理旧路径
+        assertTrue(deleted.any { it.endsWith("/AdNote/工作/旧名.md") })
+        assertTrue(repository.tombstones().isEmpty())
+        assertEquals("工作/新名.md", repository.load("mv1")!!.sync.remoteMdPath)
+    }
 }

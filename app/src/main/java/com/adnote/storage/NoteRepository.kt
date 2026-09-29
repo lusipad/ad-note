@@ -296,6 +296,16 @@ class NoteRepository(private val root: File) {
         File(tombDir, "$noteId.json").delete()
     }
 
+    /**
+     * 登记一次远端清理：改名或移动时 MOVE 失败，旧路径的文件留在远端，
+     * 由同步流程当作墓碑删除。键带时间戳，不与笔记本身的墓碑冲突。
+     */
+    fun addRemoteCleanup(noteId: String, remoteMdPath: String?, remoteInkDir: String?) {
+        if (remoteMdPath == null && remoteInkDir == null) return
+        val key = "$noteId-cleanup-${System.nanoTime()}"
+        atomicWrite(File(tombDir, "$key.json"), NoteJson.encodeToString(Tombstone.serializer(), Tombstone(key, remoteMdPath, remoteInkDir)))
+    }
+
     fun search(query: String, tag: String? = null, folder: String? = null): List<Note> =
         filter(list(), query, tag, folder)
 

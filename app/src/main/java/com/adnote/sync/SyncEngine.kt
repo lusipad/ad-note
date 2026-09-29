@@ -26,18 +26,8 @@ class SyncEngine(
      * @param force 是否强制同步所有笔记（即使未标记为 dirty）
      */
     fun sync(force: Boolean = false): SyncResult {
-        // 1. 处理已删除笔记的 Tombstone
-        for (tombstone in repository.tombstones()) {
-            try {
-                tombstone.remoteMdPath?.let { webDavClient.delete(it) }
-                tombstone.remoteInkDir?.let { webDavClient.delete(it) }
-                repository.clearTombstone(tombstone.noteId)
-            } catch (e: WebDavAuthException) {
-                return SyncResult(total = 0, success = 0, failed = 1, firstError = e.message)
-            } catch (_: Exception) {
-                // 删除失败留待下次同步继续尝试
-            }
-        }
+        // 1. 处理已删除笔记与改名残留的墓碑
+        processTombstones()?.let { return SyncResult(total = 0, success = 0, failed = 1, firstError = it) }
 
         val allNotes = repository.list()
         val mdPaths = RemotePaths.assignMdPaths(allNotes)
@@ -67,12 +57,30 @@ class SyncEngine(
             }
         }
 
+        // 本次同步中登记的改名残留，顺手清掉
+        processTombstones()
         return SyncResult(
             total = dirtyNotes.size,
             success = successCount,
             failed = failedCount,
             firstError = firstError,
         )
+    }
+
+    /** 逐条删除墓碑对应的远端文件；认证失败返回错误信息，其余失败留待下次。 */
+    private fun processTombstones(): String? {
+        for (tombstone in repository.tombstones()) {
+            try {
+                tombstone.remoteMdPath?.let { webDavClient.delete(it) }
+                tombstone.remoteInkDir?.let { webDavClient.delete(it) }
+                repository.clearTombstone(tombstone.noteId)
+            } catch (e: WebDavAuthException) {
+                return e.message
+            } catch (_: Exception) {
+                // 删除失败留待下次同步继续尝试
+            }
+        }
+        return null
     }
 
     private fun syncSingleNote(originalNote: Note, targetMdPath: String) {
@@ -84,15 +92,14 @@ class SyncEngine(
         val targetInkDir = RemotePaths.inkDir(originalNote)
         val inkDirRelative = RemotePaths.inkDirRelative(originalNote)
 
-        // 1. 标题或文件夹发生变化，尝试 MOVE
+        // 1. 标题或文件夹发生变化，尝试 MOVE；失败则登记旧路径待删除
+        var movedInk = true
         if (oldMdPath != null && oldMdPath != targetMdPath) {
-            runCatching {
-                webDavClient.move(oldMdPath, targetMdPath)
-            }
+            val movedMd = runCatching { webDavClient.move(oldMdPath, targetMdPath) }.getOrDefault(false)
+            if (!movedMd) repository.addRemoteCleanup(originalNote.id, oldMdPath, null)
             if (oldInkDir != null && oldInkDir != targetInkDir) {
-                runCatching {
-                    webDavClient.move(oldInkDir, targetInkDir)
-                }
+                movedInk = runCatching { webDavClient.move(oldInkDir, targetInkDir) }.getOrDefault(false)
+                if (!movedInk) repository.addRemoteCleanup(originalNote.id, null, oldInkDir)
             }
         }
 
