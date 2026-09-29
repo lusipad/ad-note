@@ -2,16 +2,23 @@ package com.adnote.sync
 
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
+import okhttp3.mockwebserver.SocketPolicy
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Before
+import org.junit.Rule
 import org.junit.Test
+import org.junit.rules.TemporaryFolder
 
 class WebDavClientTest {
+
+    @get:Rule
+    val tempFolder = TemporaryFolder()
 
     private lateinit var server: MockWebServer
     private lateinit var client: WebDavClient
@@ -175,7 +182,7 @@ class WebDavClientTest {
 
     @Test
     fun testDownloadWritesFileAtomically() {
-        val dir = java.nio.file.Files.createTempDirectory("adnote-dl").toFile().apply { deleteOnExit() }
+        val dir = tempFolder.root
         val target = java.io.File(dir, "sub/out.bin")
         server.enqueue(MockResponse().setResponseCode(200).setBody(okio.Buffer().write(byteArrayOf(1, 2, 3))))
         assertTrue(client.download("a/b.bin", target))
@@ -186,5 +193,30 @@ class WebDavClientTest {
         val missing = java.io.File(dir, "sub/missing.bin")
         assertFalse(client.download("a/none.bin", missing))
         assertFalse(missing.exists())
+    }
+
+    @Test
+    fun testDownloadReplacesExistingTarget() {
+        // 目标已存在：File.renameTo 在 Windows 上不会覆盖，download 必须自己保证替换成功
+        val target = tempFolder.newFile("out.bin").apply { writeBytes(byteArrayOf(9, 9, 9)) }
+        server.enqueue(MockResponse().setResponseCode(200).setBody(okio.Buffer().write(byteArrayOf(1, 2, 3))))
+        assertTrue(client.download("a/b.bin", target))
+        assertTrue(target.readBytes().contentEquals(byteArrayOf(1, 2, 3)))
+        assertFalse(java.io.File(tempFolder.root, "out.bin.part").exists())
+    }
+
+    @Test
+    fun testDownloadInterruptedKeepsOldTargetAndRemovesPart() {
+        // 服务器发出一半正文就断开连接：旧文件原样保留，.part 临时文件被清掉
+        val target = tempFolder.newFile("out.bin").apply { writeBytes(byteArrayOf(9, 9, 9)) }
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(200)
+                .setBody(okio.Buffer().write(ByteArray(2 * 1024 * 1024) { 7 }))
+                .setSocketPolicy(SocketPolicy.DISCONNECT_DURING_RESPONSE_BODY)
+        )
+        assertThrows(java.io.IOException::class.java) { client.download("a/b.bin", target) }
+        assertTrue(target.readBytes().contentEquals(byteArrayOf(9, 9, 9)))
+        assertFalse(java.io.File(tempFolder.root, "out.bin.part").exists())
     }
 }

@@ -6,6 +6,7 @@ import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.RequestBody
 import okhttp3.RequestBody.Companion.asRequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
 import java.io.IOException
@@ -108,32 +109,16 @@ class WebDavClient(
         relativePath: String,
         content: String,
         contentType: String = "text/markdown; charset=utf-8",
-    ): WebDavResponse {
-        ensureParentDirs(relativePath)
-        val url = resolveUrl(relativePath)
-        val request = newRequestBuilder(url)
-            .put(content.toRequestBody(contentType.toMediaType()))
-            .build()
-
-        return client.newCall(request).execute().use { response ->
-            if (response.code == 401) throw WebDavAuthException()
-            if (!response.isSuccessful && response.code != 201 && response.code != 204) {
-                throw WebDavException("PUT 失败 (${response.code}): $relativePath", response.code)
-            }
-            WebDavResponse(
-                statusCode = response.code,
-                etag = response.header("ETag"),
-                body = null,
-            )
-        }
-    }
+    ): WebDavResponse = executePut(relativePath, content.toRequestBody(contentType.toMediaType()))
 
     /** 上传二进制文件（录音等）。 */
-    fun putBytes(relativePath: String, bytes: ByteArray, contentType: String): WebDavResponse {
+    fun putBytes(relativePath: String, bytes: ByteArray, contentType: String): WebDavResponse =
+        executePut(relativePath, bytes.toRequestBody(contentType.toMediaType()))
+
+    /** PUT 的公共部分：先确保父目录存在，再发请求，统一处理 401 与成功状态码并取回 ETag。 */
+    private fun executePut(relativePath: String, body: RequestBody): WebDavResponse {
         ensureParentDirs(relativePath)
-        val request = newRequestBuilder(resolveUrl(relativePath))
-            .put(bytes.toRequestBody(contentType.toMediaType()))
-            .build()
+        val request = newRequestBuilder(resolveUrl(relativePath)).put(body).build()
         return client.newCall(request).execute().use { response ->
             if (response.code == 401) throw WebDavAuthException()
             if (!response.isSuccessful && response.code != 201 && response.code != 204) {
@@ -247,19 +232,8 @@ class WebDavClient(
     }
 
     /** 流式上传本地文件，不把整个文件读进内存（PDF 可能有几十 MB）。 */
-    fun putFile(relativePath: String, file: java.io.File, contentType: String): WebDavResponse {
-        ensureParentDirs(relativePath)
-        val request = newRequestBuilder(resolveUrl(relativePath))
-            .put(file.asRequestBody(contentType.toMediaType()))
-            .build()
-        return client.newCall(request).execute().use { response ->
-            if (response.code == 401) throw WebDavAuthException()
-            if (!response.isSuccessful && response.code != 201 && response.code != 204) {
-                throw WebDavException("PUT 失败 (${response.code}): $relativePath", response.code)
-            }
-            WebDavResponse(statusCode = response.code, etag = response.header("ETag"), body = null)
-        }
-    }
+    fun putFile(relativePath: String, file: java.io.File, contentType: String): WebDavResponse =
+        executePut(relativePath, file.asRequestBody(contentType.toMediaType()))
 
     /**
      * 流式下载到本地文件：先写 `.part` 临时文件，写完再替换目标，中途失败不会留下半截文件。
@@ -278,10 +252,12 @@ class WebDavClient(
             val part = java.io.File(target.parentFile, target.name + ".part")
             try {
                 body.byteStream().use { input -> part.outputStream().use { out -> input.copyTo(out) } }
-                if (!part.renameTo(target)) {
-                    target.delete()
-                    check(part.renameTo(target)) { "无法写入 ${target.path}" }
-                }
+                // 目标已存在时直接覆盖；File.renameTo 在 Windows 上不会覆盖已有文件，所以用 Files.move
+                java.nio.file.Files.move(
+                    part.toPath(),
+                    target.toPath(),
+                    java.nio.file.StandardCopyOption.REPLACE_EXISTING,
+                )
             } finally {
                 part.delete()
             }
