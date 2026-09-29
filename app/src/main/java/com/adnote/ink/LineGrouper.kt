@@ -2,6 +2,7 @@ package com.adnote.ink
 
 import com.adnote.model.PenType
 import com.adnote.model.Stroke
+import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
 
@@ -46,9 +47,16 @@ object LineGrouper {
 
         class Line(var top: Float, var bottom: Float, val strokes: MutableList<Pair<Int, Stroke>>, var flat: Boolean)
 
+        // 竖框、大括号、表格边线这类很高的笔画不参与分行，否则会把它跨过的所有行撑成一行。
+        val tallLimit = medianHeight * 2f
+        val tall = ArrayList<Pair<Int, Stroke>>()
         val lines = ArrayList<Line>()
         for ((index, item) in items.withIndex()) {
             val (stroke, b) = item
+            if (b.height > tallLimit) {
+                tall += index to stroke
+                continue
+            }
             val isFlat = b.height < minHeight
             val pad = max(0f, (minHeight - b.height) / 2f)
             val top = b.top - pad
@@ -74,18 +82,50 @@ object LineGrouper {
             }
         }
 
-        // 只含扁平笔画（下划线、横线、点）的行不单独成行，并入垂直距离最近的正常行；太远则保留。
         fun gap(a: Line, b: Line) = max(0f, max(a.top, b.top) - min(a.bottom, b.bottom))
+        fun absorb(target: Line, from: Line) {
+            target.strokes += from.strokes
+            target.top = min(target.top, from.top)
+            target.bottom = max(target.bottom, from.bottom)
+            from.strokes.clear()
+        }
+
         val textLines = lines.filter { !it.flat }
-        val result = if (textLines.isEmpty()) lines else {
+        if (textLines.isNotEmpty()) {
+            // 只含扁平笔画（下划线、横线、点）的行不单独成行，并入垂直距离最近的正常行；太远则保留。
             for (flatLine in lines.filter { it.flat }) {
                 val target = textLines.minByOrNull { gap(flatLine, it) } ?: continue
-                if (gap(flatLine, target) <= medianHeight) {
-                    target.strokes += flatLine.strokes
-                    flatLine.strokes.clear()
+                if (gap(flatLine, target) <= medianHeight) absorb(target, flatLine)
+            }
+        } else if (lines.size > 1) {
+            // 整页都是扁平笔画（例如「二」）：扁平行之间就近合并，间距上限取笔画宽度中位数的一半。
+            val widths = items.filter { it.second.height <= tallLimit }.map { it.second.right - it.second.left }.sorted()
+            val limit = max(widths[widths.size / 2] * 0.5f, minHeight)
+            while (true) {
+                val alive = lines.filter { it.strokes.isNotEmpty() }
+                var pa: Line? = null
+                var pb: Line? = null
+                var pg = Float.MAX_VALUE
+                for (i in alive.indices) for (j in i + 1 until alive.size) {
+                    val g = gap(alive[i], alive[j])
+                    if (g <= limit && g < pg) { pg = g; pa = alive[i]; pb = alive[j] }
+                }
+                if (pa == null || pb == null) break
+                absorb(pa, pb)
+            }
+        }
+        val result = lines.filter { it.strokes.isNotEmpty() }.toMutableList()
+
+        if (tall.isNotEmpty()) {
+            if (result.isEmpty()) {
+                result += Line(0f, 0f, tall, false)
+            } else {
+                for (t in tall) {
+                    val b = boundsOf(t.second)
+                    val centre = (b.top + b.bottom) / 2f
+                    result.minByOrNull { abs((it.top + it.bottom) / 2f - centre) }!!.strokes += t
                 }
             }
-            lines.filter { it.strokes.isNotEmpty() }
         }
         return result.sortedBy { it.top }.map { line -> line.strokes.sortedBy { it.first }.map { it.second } }
     }

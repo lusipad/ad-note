@@ -2400,8 +2400,9 @@ class EditorActivity : AppCompatActivity() {
         val hash = p.inkHash()
         if (p.recognizedHash == hash) return
         lifecycleScope.launch {
-            if (!app.recognizer.isModelDownloaded()) return@launch
-            val text = app.recognizer.recognize(p).getOrNull() ?: return@launch
+            val rec = app.recognizer
+            if (!rec.isModelDownloaded()) return@launch
+            val text = rec.recognize(p).getOrNull() ?: return@launch
             val idx = note.pages.indexOfFirst { it.id == p.id }
             if (idx < 0 || note.pages[idx].inkHash() != hash) return@launch
             val list = note.pages.toMutableList()

@@ -33,10 +33,18 @@ class MlKitRecognizer(
         RemoteModelManager.getInstance()
     }
 
+    @Volatile private var client: DigitalInkRecognizer? = null
+
     private val recognizer: DigitalInkRecognizer? by lazy {
         model?.let {
             DigitalInkRecognition.getClient(DigitalInkRecognizerOptions.builder(it).build())
-        }
+        }.also { client = it }
+    }
+
+    /** 释放 ML Kit 识别器；只有已经创建过才会关闭。 */
+    fun close() {
+        client?.close()
+        client = null
     }
 
     override suspend fun isModelDownloaded(): Boolean = withContext(Dispatchers.IO) {
@@ -67,7 +75,11 @@ class MlKitRecognizer(
             return@withContext Result.success("")
         }
 
-        val client = recognizer ?: return@withContext Result.failure(
+        // 先分行：只有荧光笔的页面没有可识别内容，不必碰模型和网络
+        val lines = LineGrouper.group(page.strokes)
+        if (lines.isEmpty()) return@withContext Result.success("")
+
+        val inkClient = recognizer ?: return@withContext Result.failure(
             IllegalStateException("ML Kit 识别器初始化失败")
         )
 
@@ -82,7 +94,6 @@ class MlKitRecognizer(
         }
 
         runCatching {
-            val lines = LineGrouper.group(page.strokes)
             val texts = ArrayList<String>(lines.size)
             for (line in lines) {
                 val inkBuilder = Ink.builder()
@@ -93,7 +104,7 @@ class MlKitRecognizer(
                     }
                     inkBuilder.addStroke(strokeBuilder.build())
                 }
-                val text = client.recognize(inkBuilder.build()).await().candidates.firstOrNull()?.text.orEmpty().trim()
+                val text = inkClient.recognize(inkBuilder.build()).await().candidates.firstOrNull()?.text.orEmpty().trim()
                 if (text.isNotEmpty()) texts += text
             }
             texts.joinToString("\n")

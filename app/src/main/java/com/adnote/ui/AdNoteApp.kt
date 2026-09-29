@@ -123,8 +123,13 @@ class AdNoteApp : Application() {
         }.getOrDefault(StylusButtonAction.ERASER)
         fullRefreshEvery = prefs.getInt("full_refresh_every", 6)
         autoSync = prefs.getBoolean("auto_sync", true)
+        val previousLanguage = recognitionLanguage
         recognitionLanguage = prefs.getString("recognition_language", null) ?: RecognitionLanguages.DEFAULT
-        recognizer = MlKitRecognizer(recognitionLanguage)
+        // 每次保存 WebDAV 设置都会走到这里：语言没变就沿用旧识别器
+        if (!::recognizer.isInitialized || previousLanguage != recognitionLanguage) {
+            if (::recognizer.isInitialized) (recognizer as? MlKitRecognizer)?.close()
+            recognizer = MlKitRecognizer(recognitionLanguage)
+        }
 
         syncEngine = if (syncSettings.isConfigured) {
             val client = WebDavClient(
@@ -175,6 +180,7 @@ class AdNoteApp : Application() {
     fun setRecognitionLanguage(tag: String) {
         recognitionLanguage = tag
         prefs().edit().putString("recognition_language", tag).apply()
+        (recognizer as? MlKitRecognizer)?.close()
         recognizer = MlKitRecognizer(tag)
     }
 

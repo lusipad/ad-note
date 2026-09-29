@@ -106,4 +106,42 @@ class LineGrouperTest {
         assertEquals(2, lines.size)
         assertEquals(listOf("far"), lines[1].map { it.id })
     }
+
+    private fun rows3(): List<com.adnote.model.Stroke> = listOf(
+        stroke("a1", 10f, 100f, 40f, 140f), stroke("a2", 50f, 100f, 80f, 140f),
+        stroke("b1", 10f, 200f, 40f, 240f), stroke("b2", 50f, 200f, 80f, 240f),
+        stroke("c1", 10f, 300f, 40f, 340f), stroke("c2", 50f, 300f, 80f, 340f),
+    )
+
+    @Test
+    fun tallStrokeDoesNotMergeRows() {
+        val lines = rows3().let { LineGrouper.group(it.take(2) + stroke("box", 0f, 90f, 1f, 350f) + it.drop(2)) }
+        assertEquals(3, lines.size)
+        assertEquals(1, lines.count { l -> l.any { it.id == "box" } })
+    }
+
+    @Test
+    fun tallStrokeWrittenFirstDoesNotMergeRows() {
+        val lines = LineGrouper.group(listOf(stroke("brace", 0f, 90f, 1f, 350f)) + rows3())
+        assertEquals(3, lines.size)
+        assertEquals(1, lines.count { l -> l.any { it.id == "brace" } })
+    }
+
+    @Test
+    fun singleTallStrokeIsOneLine() {
+        assertEquals(1, LineGrouper.group(listOf(stroke("t", 0f, 0f, 1f, 500f))).size)
+    }
+
+    @Test
+    fun allFlatNearbyStrokesFormOneLine() {
+        val lines = LineGrouper.group(listOf(stroke("1", 0f, 100f, 60f, 100f), stroke("2", 0f, 120f, 60f, 120f)))
+        assertEquals(1, lines.size)
+        assertEquals(listOf("1", "2"), lines[0].map { it.id })
+    }
+
+    @Test
+    fun allFlatFarStrokesStaySeparate() {
+        val lines = LineGrouper.group(listOf(stroke("1", 0f, 100f, 60f, 100f), stroke("2", 0f, 500f, 60f, 500f)))
+        assertEquals(2, lines.size)
+    }
 }
