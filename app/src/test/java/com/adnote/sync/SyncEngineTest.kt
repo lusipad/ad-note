@@ -592,4 +592,92 @@ tags: [共同, 远端新增]
         assertEquals(1, result.success)
         assertEquals(listOf("本地", "电脑"), repository.load(note.id)!!.tags)
     }
+
+    @Test
+    fun testPullSkipsRemoteMdOwnedByAnotherNote() {
+        val dav = MemoryDav()
+        server.dispatcher = dav
+        val created = repository.create("拉取", "工作", 10, 10)
+        repository.save(created.copy(tags = listOf("设备")))
+        assertEquals(1, syncEngine.sync().success)
+        val mdPath = repository.load(created.id)!!.sync.remoteMdPath!!
+
+        // 远端这个路径上现在是另一篇笔记的 md
+        dav.files[mdPath] = "---\nadnote-id: other-id\ntitle: 拉取\ntags: [别人]\n---\n别人的正文\n" to "\"foreign\""
+
+        val result = syncEngine.sync()
+        assertEquals(0, result.pulled)
+        val local = repository.load(created.id)!!
+        assertEquals(listOf("设备"), local.tags)
+        assertNull(local.userMarkdown)
+    }
+
+    @Test
+    fun testPushIgnoresTagsAndBodyOfRemoteMdOwnedByAnotherNote() {
+        val dav = MemoryDav()
+        server.dispatcher = dav
+        val note = repository.create("推送", "工作", 10, 10)
+        dav.files["工作/推送.md"] = "---\nadnote-id: other-id\ntitle: 推送\ntags: [别人]\n---\n别人的正文\n" to "\"foreign\""
+
+        assertEquals(1, syncEngine.sync().success)
+        val md = dav.files["工作/推送.md"]!!.first
+        assertTrue(md.contains("adnote-id: ${note.id}"))
+        assertFalse(md.contains("别人"))
+        assertTrue(repository.load(note.id)!!.tags.isEmpty())
+    }
+
+    @Test
+    fun testFailedMoveMergesOldMdIntoNewPath() {
+        val deleted = java.util.concurrent.CopyOnWriteArrayList<String>()
+        val puts = ConcurrentHashMap<String, String>()
+        val oldMd = "---\nadnote-id: mv2\ntitle: 旧名\ntags: []\n---\n旧正文\n\n" +
+            com.adnote.export.MarkdownComposer.BEGIN + "\n" + com.adnote.export.MarkdownComposer.END + "\n"
+        server.dispatcher = object : Dispatcher() {
+            override fun dispatch(request: RecordedRequest): MockResponse {
+                val p = java.net.URLDecoder.decode(request.path.orEmpty(), "UTF-8").removePrefix("/AdNote").trim('/')
+                return when (request.method) {
+                    "MKCOL" -> MockResponse().setResponseCode(201)
+                    "MOVE" -> MockResponse().setResponseCode(500)
+                    "GET" -> if (p == "工作/旧名.md" && p !in deleted) {
+                        MockResponse().setResponseCode(200).setBody(oldMd).setHeader("ETag", "\"old\"")
+                    } else MockResponse().setResponseCode(404)
+                    "PUT" -> { puts[p] = request.body.readUtf8(); MockResponse().setResponseCode(201).setHeader("ETag", "\"e\"") }
+                    "DELETE" -> { deleted += p; MockResponse().setResponseCode(204) }
+                    else -> MockResponse().setResponseCode(200)
+                }
+            }
+        }
+        val note = com.adnote.model.Note(
+            id = "mv2", title = "新名", folder = "工作",
+            pages = listOf(com.adnote.model.Page(width = 10, height = 10)),
+            createdAt = 1L, updatedAt = 2000L,
+            sync = SyncState(lastSyncedAt = 1000L, remoteMdPath = "工作/旧名.md", remoteMdEtag = "\"x\""),
+        )
+        repository.save(note)
+
+        assertEquals(1, syncEngine.sync().success)
+        assertTrue(puts["工作/新名.md"]!!.contains("旧正文"))
+        assertTrue("工作/旧名.md" in deleted)
+        assertTrue(repository.tombstones().isEmpty())
+    }
+
+    @Test
+    fun testPullUsesLocalTagsAsBaseForLegacySyncState() {
+        val dav = MemoryDav()
+        server.dispatcher = dav
+        // v0.4.0 同步过的笔记：没有 syncedTags
+        val note = com.adnote.model.Note(
+            id = "lg1", title = "旧版", folder = "工作", tags = listOf("a", "b"),
+            pages = listOf(com.adnote.model.Page(width = 10, height = 10)),
+            createdAt = 1L, updatedAt = 1000L,
+            sync = SyncState(lastSyncedAt = 1000L, remoteMdPath = "工作/旧版.md", remoteMdEtag = "\"old\""),
+        )
+        repository.save(note)
+        assertFalse(repository.load("lg1")!!.isDirty)
+        // 在 Obsidian 里删掉了标签 b
+        dav.files["工作/旧版.md"] = "---\nadnote-id: lg1\ntitle: 旧版\ntags: [a]\n---\n" to "\"new\""
+
+        assertEquals(1, syncEngine.sync().pulled)
+        assertEquals(listOf("a"), repository.load("lg1")!!.tags)
+    }
 }

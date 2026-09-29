@@ -11,7 +11,9 @@ import okhttp3.mockwebserver.MockWebServer
 import okhttp3.mockwebserver.RecordedRequest
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
@@ -54,7 +56,9 @@ class RestoreEngineTest {
                         }
                         MockResponse().setResponseCode(207).setBody(xml)
                     }
-                    "GET" -> files[p]?.let { MockResponse().setResponseCode(200).setBody(okio.Buffer().write(it)) }
+                    // OkHttp 会把 URL 里的 ".." 折叠掉：越界测试的恶意文件在折叠后的路径上同样能拿到
+                    "GET" -> (files[p] ?: files.entries.firstOrNull { p.endsWith("evil.jpg") && it.key.endsWith("evil.jpg") }?.value)
+                        ?.let { MockResponse().setResponseCode(200).setBody(okio.Buffer().write(it)) }
                         ?: MockResponse().setResponseCode(404)
                     else -> MockResponse().setResponseCode(200)
                 }
@@ -67,14 +71,22 @@ class RestoreEngineTest {
     @After
     fun teardown() = server.shutdown()
 
-    private fun putRemoteNote(folder: String, note: Note, extra: Map<String, ByteArray> = emptyMap()) {
+    /** [mdName] 为 null 表示远端没有 md；md 的 front matter 写 adnote-id: [mdId]。 */
+    private fun putRemoteNote(
+        folder: String,
+        note: Note,
+        extra: Map<String, ByteArray> = emptyMap(),
+        mdName: String? = "${note.title}.md",
+        mdId: String = note.id,
+    ) {
         val inkDir = "$folder/_ink/${note.id}"
         dirs[""] = ((dirs[""] ?: emptyList()) + (folder to true)).distinct()
-        dirs[folder] = listOf("_ink" to true, "${note.title}.md" to false)
+        dirs[folder] = ((dirs[folder] ?: emptyList()) + ("_ink" to true) + listOfNotNull(mdName?.let { it to false })).distinct()
         dirs["$folder/_ink"] = (dirs["$folder/_ink"] ?: emptyList()) + (note.id to true)
         dirs[inkDir] = listOf("ink.json" to false) + extra.keys.map { it to false }
         files["$inkDir/ink.json"] = NoteJson.encodeToString(Note.serializer(), note).toByteArray()
         extra.forEach { (rel, bytes) -> files["$inkDir/$rel"] = bytes }
+        if (mdName != null) files["$folder/$mdName"] = "---\nadnote-id: $mdId\ntitle: ${note.title}\n---\n".toByteArray()
     }
 
     @Test
@@ -155,18 +167,60 @@ class RestoreEngineTest {
         assertTrue(engine.scan().isEmpty())
     }
 
+    private fun evilNote() = Note(
+        id = "gggg", title = "越界", folder = "f", createdAt = 1L, updatedAt = 5L,
+        pages = listOf(Page(width = 10, height = 10, images = listOf(com.adnote.model.ImageItem(path = "../../evil.jpg", x = 0f, y = 0f, width = 1f, height = 1f)))),
+    )
+
+    private fun assertNoEvilFile() {
+        assertFalse(java.io.File(tempFolder.root, "evil.jpg").exists())
+        assertFalse(java.io.File(tempFolder.root, "notes/evil.jpg").exists())
+        assertFalse(java.io.File(tempFolder.root, "notes/gggg/evil.jpg").exists())
+    }
+
+    @Test
+    fun testScanDropsNoteReferencingAssetOutsideNoteDirectory() {
+        putRemoteNote("f", evilNote(), extra = mapOf("../../evil.jpg" to byteArrayOf(1)))
+
+        val found = engine.scan()
+        assertTrue(found.none { it.note.id == "gggg" })
+        assertEquals(0, engine.restore(found).restored)
+        assertNoEvilFile()
+        assertNull(repository.load("gggg"))
+    }
+
     @Test
     fun testRestoreRejectsAttachmentOutsideNoteDirectory() {
-        val note = Note(
-            id = "gggg", title = "越界", folder = "f", createdAt = 1L, updatedAt = 5L,
-            pages = listOf(Page(width = 10, height = 10, images = listOf(com.adnote.model.ImageItem(path = "../../evil.jpg", x = 0f, y = 0f, width = 1f, height = 1f)))),
-        )
-        putRemoteNote("f", note, extra = mapOf("../../evil.jpg" to byteArrayOf(1)))
-        files["evil.jpg"] = byteArrayOf(1)
+        // 绕过 scan 的检查，直接恢复：restoreOne 自己也要拦住越界附件
+        putRemoteNote("f", evilNote(), extra = mapOf("../../evil.jpg" to byteArrayOf(1)))
+        val info = RemoteNoteInfo(evilNote(), "f", "f/_ink/gggg", LocalState.MISSING)
 
-        assertEquals(1, engine.restore(engine.scan()).restored)
-        assertTrue(!java.io.File(tempFolder.root, "evil.jpg").exists())
-        assertTrue(!java.io.File(tempFolder.root, "notes/evil.jpg").exists())
+        assertEquals(1, engine.restore(listOf(info)).restored)
+        assertNoEvilFile()
         assertTrue(repository.load("gggg")!!.sync.uploadedAssets.isEmpty())
+    }
+
+    @Test
+    fun testSameTitleNotesRestoreToTheirOwnMdPaths() {
+        val first = Note(id = "aaaa1111", title = "Foo", folder = "f", pages = listOf(Page(width = 10, height = 10)), createdAt = 1L, updatedAt = 10L)
+        val second = Note(id = "bbbb2222", title = "Foo", folder = "f", pages = listOf(Page(width = 10, height = 10)), createdAt = 2L, updatedAt = 20L)
+        putRemoteNote("f", first, mdName = "Foo.md")
+        putRemoteNote("f", second, mdName = "Foo (bbbb).md")
+
+        assertEquals(2, engine.restore(engine.scan()).restored)
+        assertEquals("f/Foo.md", repository.load("aaaa1111")!!.sync.remoteMdPath)
+        assertEquals("f/Foo (bbbb).md", repository.load("bbbb2222")!!.sync.remoteMdPath)
+    }
+
+    @Test
+    fun testRestoreLeavesMdPathNullWhenMdMissingOrBelongsToAnotherNote() {
+        val noMd = Note(id = "hhhh", title = "无md", folder = "f", pages = listOf(Page(width = 10, height = 10)), createdAt = 1L, updatedAt = 10L)
+        val foreign = Note(id = "iiii", title = "别人的", folder = "f", pages = listOf(Page(width = 10, height = 10)), createdAt = 2L, updatedAt = 20L)
+        putRemoteNote("f", noMd, mdName = null)
+        putRemoteNote("f", foreign, mdId = "zzzz")
+
+        assertEquals(2, engine.restore(engine.scan()).restored)
+        assertNull(repository.load("hhhh")!!.sync.remoteMdPath)
+        assertNull(repository.load("iiii")!!.sync.remoteMdPath)
     }
 }

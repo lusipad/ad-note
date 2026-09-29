@@ -118,4 +118,12 @@ another-key: 123
         assertTrue(md.contains("## 录音\n"))
         assertTrue(md.contains("![录音 1 · 1:05](_ink/n1/audio/r1.m4a)"))
     }
+
+    @Test
+    fun testParseReturnsAdnoteId() {
+        assertEquals("note01", MarkdownComposer.parse("---\nadnote-id: note01\ntitle: t\n---\nbody\n").adnoteId)
+        assertEquals("q1", MarkdownComposer.parse("---\nadnote-id: \"q1\"\n---\n").adnoteId)
+        assertEquals(null, MarkdownComposer.parse("---\ntitle: t\n---\nbody\n").adnoteId)
+        assertEquals(null, MarkdownComposer.parse("no front matter").adnoteId)
+    }
 }

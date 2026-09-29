@@ -41,7 +41,7 @@ class SyncEngine(
 
         for (note in dirtyNotes) {
             try {
-                syncSingleNote(note, mdPaths[note.id] ?: "${RemotePaths.folderPath(note)}/${RemotePaths.sanitize(note.title)}.md")
+                syncSingleNote(note, mdPaths[note.id] ?: "${RemotePaths.folderPath(note)}/${RemotePaths.sanitize(note.title)}.md", mdPaths)
                 successCount++
             } catch (e: WebDavAuthException) {
                 // 认证失败立即整体中止
@@ -104,8 +104,12 @@ class SyncEngine(
                 val latest = repository.load(note.id) ?: continue
                 if (latest.isDirty) continue
                 val parsed = MarkdownComposer.parse(body)
+                // 这个路径上的 md 属于另一篇笔记（恢复时猜错路径、或远端改名撞车）：不能把别人的内容合并进来
+                if (parsed.adnoteId != null && parsed.adnoteId != note.id) continue
                 val remoteTags = parsed.tags ?: emptyList()
-                val tags = TagMerge.merge(latest.sync.syncedTags, latest.tags, remoteTags)
+                // v0.4.0 同步过的笔记没有 syncedTags：干净笔记的本地标签就是上次推送的标签
+                val base = latest.sync.syncedTags.ifEmpty { latest.tags }
+                val tags = TagMerge.merge(base, latest.tags, remoteTags)
                 val userMd = MarkdownComposer.userContent(parsed) ?: latest.userMarkdown
                 val needsPush = tags != remoteTags
                 repository.save(
@@ -142,7 +146,8 @@ class SyncEngine(
         return null
     }
 
-    private fun syncSingleNote(originalNote: Note, targetMdPath: String) {
+    /** [mdPaths] 是本次同步所有笔记的 md 路径（id -> 路径），用来避免把别的笔记正在用的路径登记为待删除。 */
+    private fun syncSingleNote(originalNote: Note, targetMdPath: String, mdPaths: Map<String, String>) {
         val oldMdPath = originalNote.sync.remoteMdPath
         val oldInkDir = originalNote.sync.remoteMdPath?.let {
             val folder = it.substringBeforeLast('/', "")
@@ -151,25 +156,31 @@ class SyncEngine(
         val targetInkDir = RemotePaths.inkDir(originalNote)
         val inkDirRelative = RemotePaths.inkDirRelative(originalNote)
 
-        // 1. 标题或文件夹发生变化，尝试 MOVE；失败则登记旧路径待删除
+        // 1. 标题或文件夹发生变化，尝试 MOVE；失败的旧路径在新 md 上传成功后再登记待删除
+        var movedMd = true
         var movedInk = true
         if (oldMdPath != null && oldMdPath != targetMdPath) {
-            val movedMd = runCatching { webDavClient.move(oldMdPath, targetMdPath) }.getOrDefault(false)
-            if (!movedMd) repository.addRemoteCleanup(originalNote.id, oldMdPath, null)
+            movedMd = runCatching { webDavClient.move(oldMdPath, targetMdPath) }.getOrDefault(false)
             if (oldInkDir != null && oldInkDir != targetInkDir) {
                 movedInk = runCatching { webDavClient.move(oldInkDir, targetInkDir) }.getOrDefault(false)
-                if (!movedInk) repository.addRemoteCleanup(originalNote.id, null, oldInkDir)
             }
         }
 
-        // 2. 获取远端已有的 Markdown，判断 Obsidian 端是否改过，改过则三方合并标签、采用远端正文
-        val existingResp = webDavClient.get(targetMdPath)
+        // 2. 获取远端已有的 Markdown，判断 Obsidian 端是否改过，改过则三方合并标签、采用远端正文；
+        //    MOVE 没成功时新路径上还没有文件，就读旧路径的，把用户区和其他 front matter 带到新文件里
+        var existingResp = webDavClient.get(targetMdPath)
+        if (existingResp == null && !movedMd && oldMdPath != null) existingResp = webDavClient.get(oldMdPath)
+        var parsed = existingResp?.let { MarkdownComposer.parse(it.body.orEmpty()) }
+        // 拿到的 md 属于另一篇笔记：不采用它的标签和用户区，也不保留它的 front matter
+        if (parsed?.adnoteId != null && parsed.adnoteId != originalNote.id) {
+            existingResp = null
+            parsed = null
+        }
         var mergedTags = originalNote.tags
         var mergedUserMarkdown = originalNote.userMarkdown
 
-        if (existingResp != null) {
+        if (existingResp != null && parsed != null) {
             val body = existingResp.body.orEmpty()
-            val parsed = MarkdownComposer.parse(body)
             val remoteUserContent = MarkdownComposer.userContent(parsed)
             val remoteChanged = RemoteChange.detect(
                 localEtag = originalNote.sync.remoteMdEtag,
@@ -198,6 +209,11 @@ class SyncEngine(
             existing = existingResp?.body,
         )
         val putMdResp = webDavClient.put(targetMdPath, mdContent, "text/markdown; charset=utf-8")
+        // 新 md 已上传，MOVE 失败留下的旧文件现在才能登记待删除；旧 md 路径若正被别的笔记使用则不能删
+        if (!movedMd && oldMdPath != null && oldMdPath !in mdPaths.values) {
+            repository.addRemoteCleanup(originalNote.id, oldMdPath, null)
+        }
+        if (!movedInk && oldInkDir != null) repository.addRemoteCleanup(originalNote.id, null, oldInkDir)
 
         // 4. 上传各页 SVG
         for ((index, page) in noteWithMerged.pages.withIndex()) {

@@ -26,6 +26,8 @@ object MarkdownComposer {
         val tags: List<String>?,
         val before: String,
         val after: String,
+        /** front matter 里的 adnote-id；没有则 null。 */
+        val adnoteId: String?,
     )
 
     /**
@@ -112,6 +114,7 @@ object MarkdownComposer {
         var body = text
         val foreign = ArrayList<String>()
         var tags: List<String>? = null
+        var adnoteId: String? = null
 
         if (text.startsWith("---\n")) {
             val end = text.indexOf("\n---", 4)
@@ -132,6 +135,7 @@ object MarkdownComposer {
                             block += fmLines[j]; j++
                         }
                         if (key == "tags") tags = parseTags(line.substringAfter(':').trim(), block)
+                        if (key == "adnote-id") adnoteId = unquote(line.substringAfter(':').trim()).trim().ifEmpty { null }
                         i = j
                     } else {
                         if (line.isNotBlank()) foreign += line
@@ -145,10 +149,10 @@ object MarkdownComposer {
         val e = body.indexOf(END)
         return if (b >= 0 && e > b) {
             val afterEnd = body.indexOf('\n', e).let { if (it < 0) body.length else it + 1 }
-            Parsed(foreign, tags, body.substring(0, b), body.substring(afterEnd))
+            Parsed(foreign, tags, body.substring(0, b), body.substring(afterEnd), adnoteId)
         } else {
             // 用户删掉了标记：整段正文都当作用户区，生成区追加在后面
-            Parsed(foreign, tags, body, "")
+            Parsed(foreign, tags, body, "", adnoteId)
         }
     }
 
