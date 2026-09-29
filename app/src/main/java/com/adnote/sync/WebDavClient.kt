@@ -111,10 +111,6 @@ class WebDavClient(
         contentType: String = "text/markdown; charset=utf-8",
     ): WebDavResponse = executePut(relativePath, content.toRequestBody(contentType.toMediaType()))
 
-    /** 上传二进制文件（录音等）。 */
-    fun putBytes(relativePath: String, bytes: ByteArray, contentType: String): WebDavResponse =
-        executePut(relativePath, bytes.toRequestBody(contentType.toMediaType()))
-
     /** PUT 的公共部分：先确保父目录存在，再发请求，统一处理 401 与成功状态码并取回 ETag。 */
     private fun executePut(relativePath: String, body: RequestBody): WebDavResponse {
         ensureParentDirs(relativePath)

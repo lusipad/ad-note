@@ -245,11 +245,66 @@ tags: [Obsidian新标签1, 标签2]
 
         syncEngine.sync()
         assertEquals(1, puts.count { it.endsWith("/audio/r1.m4a") })
-        assertEquals(listOf("r1"), repository.load(created.id)!!.sync.uploadedRecordings)
+        assertEquals(listOf("audio/r1.m4a"), repository.load(created.id)!!.sync.uploadedAssets)
 
         puts.clear()
         syncEngine.sync(force = true)
         assertEquals(0, puts.count { it.endsWith(".m4a") })
+    }
+
+    /** 记录 PUT/DELETE 路径的 dispatcher，GET 一律 404。 */
+    private fun assetDispatcher(puts: MutableList<String>, deletes: MutableList<String>) = object : Dispatcher() {
+        override fun dispatch(request: RecordedRequest): MockResponse {
+            val path = java.net.URLDecoder.decode(request.path.orEmpty(), "UTF-8")
+            return when (request.method) {
+                "MKCOL" -> MockResponse().setResponseCode(201)
+                "GET" -> MockResponse().setResponseCode(404)
+                "PUT" -> { puts += path; MockResponse().setResponseCode(201).setHeader("ETag", "\"e\"") }
+                "DELETE" -> { deletes += path; MockResponse().setResponseCode(204) }
+                else -> MockResponse().setResponseCode(200)
+            }
+        }
+    }
+
+    @Test
+    fun testImagesAndPdfUploadedOnceAndStaleAssetsDeleted() {
+        val puts = java.util.concurrent.CopyOnWriteArrayList<String>()
+        val deletes = java.util.concurrent.CopyOnWriteArrayList<String>()
+        server.dispatcher = assetDispatcher(puts, deletes)
+
+        val note = repository.create("附件", "f", 10, 10)
+        val img = com.adnote.model.ImageItem(path = "images/p.jpg", x = 0f, y = 0f, width = 1f, height = 1f)
+        repository.assetFile(note.id, "images/p.jpg").apply { parentFile!!.mkdirs(); writeBytes(byteArrayOf(9)) }
+        repository.assetFile(note.id, "document.pdf").writeBytes(byteArrayOf(1))
+        repository.save(note.copy(pages = listOf(note.pages[0].copy(images = listOf(img))), pdfPath = "document.pdf"))
+
+        syncEngine.sync()
+        assertTrue(puts.any { it.endsWith("/_ink/${note.id}/images/p.jpg") })
+        assertTrue(puts.any { it.endsWith("/_ink/${note.id}/document.pdf") })
+        assertEquals(setOf("images/p.jpg", "document.pdf"), repository.load(note.id)!!.sync.uploadedAssets.toSet())
+
+        // 删掉图片再同步：不重传 PDF，远端图片被删除
+        puts.clear()
+        val loaded = repository.load(note.id)!!
+        repository.save(loaded.copy(pages = listOf(loaded.pages[0].copy(images = emptyList())), updatedAt = maxOf(loaded.updatedAt, loaded.sync.lastSyncedAt) + 1000))
+        syncEngine.sync()
+        assertFalse(puts.any { it.endsWith("/document.pdf") })
+        assertTrue(deletes.any { it.endsWith("/_ink/${note.id}/images/p.jpg") })
+        assertEquals(listOf("document.pdf"), repository.load(note.id)!!.sync.uploadedAssets)
+    }
+
+    @Test
+    fun testMissingAssetIsSkipped() {
+        val puts = java.util.concurrent.CopyOnWriteArrayList<String>()
+        server.dispatcher = assetDispatcher(puts, java.util.concurrent.CopyOnWriteArrayList())
+        val note = repository.create("缺文件", "f", 10, 10)
+        val img = com.adnote.model.ImageItem(path = "images/gone.jpg", x = 0f, y = 0f, width = 1f, height = 1f)
+        repository.save(note.copy(pages = listOf(note.pages[0].copy(images = listOf(img)))))
+
+        val result = syncEngine.sync()
+        assertEquals(1, result.success)
+        assertFalse(puts.any { it.endsWith("gone.jpg") })
+        assertTrue(repository.load(note.id)!!.sync.uploadedAssets.isEmpty())
     }
 
     @org.junit.Test

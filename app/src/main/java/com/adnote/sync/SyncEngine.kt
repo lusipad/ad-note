@@ -151,13 +151,20 @@ class SyncEngine(
             webDavClient.delete("$targetInkDir/${MarkdownComposer.pageFileName(index)}")
         }
 
-        // 录音只上传一次（按 id 记录），文件较大
-        val uploaded = originalNote.sync.uploadedRecordings.toMutableSet()
-        for (rec in noteWithMerged.recordings) {
-            if (rec.id in uploaded) continue
-            val bytes = repository.readAsset(originalNote.id, rec.path) ?: continue
-            webDavClient.putBytes("$targetInkDir/${rec.path}", bytes, "audio/mp4")
-            uploaded += rec.id
+        // 附件（录音、图片、背景、PDF）每个只传一次；本地删掉的在远端也删掉；
+        // 笔迹目录 MOVE 失败时远端等于空目录，全部重传
+        val previouslyUploaded = if (movedInk) NoteAssets.previouslyUploaded(originalNote) else emptySet()
+        val referenced = NoteAssets.referenced(noteWithMerged)
+        val uploadedAssets = ArrayList<String>()
+        for (rel in referenced) {
+            if (rel in previouslyUploaded) { uploadedAssets += rel; continue }
+            val file = repository.assetFile(originalNote.id, rel)
+            if (!file.isFile) continue
+            webDavClient.putFile("$targetInkDir/$rel", file, NoteAssets.mimeType(rel))
+            uploadedAssets += rel
+        }
+        for (stale in previouslyUploaded - referenced.toSet()) {
+            runCatching { webDavClient.delete("$targetInkDir/$stale") }
         }
 
         // 5. 上传原始 ink.json（供灾备恢复）
@@ -172,7 +179,7 @@ class SyncEngine(
             remoteMdHash = ContentHash.sha256(mdContent),
             syncedTags = noteWithMerged.tags,
             remotePageCount = noteWithMerged.pages.size,
-            uploadedRecordings = uploaded.filter { id -> noteWithMerged.recordings.any { it.id == id } },
+            uploadedAssets = uploadedAssets,
         )
         repository.save(withSyncState(repository.load(originalNote.id) ?: return, originalNote, noteWithMerged, syncState))
     }
