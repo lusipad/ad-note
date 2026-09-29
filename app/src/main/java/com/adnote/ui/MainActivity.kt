@@ -80,7 +80,8 @@ class MainActivity : AppCompatActivity() {
         },
         onHeaderAddClick = { folder ->
             showNewNoteDialog(initialFolder = folder)
-        }
+        },
+        onHeaderLongClick = { header -> if (header.isFolder) showFolderActions(header.key) },
     )
 
     private var selectedFolder: String? = null
@@ -553,6 +554,64 @@ class MainActivity : AppCompatActivity() {
             .show()
     }
 
+    private fun showFolderActions(folder: String) {
+        val actions = arrayOf("重命名文件夹", "解散文件夹（笔记移到收件箱）")
+        AlertDialog.Builder(this)
+            .setTitle("📁 $folder")
+            .setItems(actions) { _, which ->
+                when (which) {
+                    0 -> showRenameFolderDialog(folder)
+                    1 -> showDissolveFolderDialog(folder)
+                }
+            }
+            .show()
+    }
+
+    private fun showRenameFolderDialog(folder: String) {
+        val input = EditText(this).apply {
+            setText(folder)
+            setSelection(folder.length)
+            hint = getString(R.string.note_folder_hint)
+        }
+        AlertDialog.Builder(this)
+            .setTitle("重命名文件夹")
+            .setView(input)
+            .setPositiveButton("确定") { _, _ ->
+                val to = input.text.toString().trim().trim('/')
+                if (to.isEmpty() || to == folder) return@setPositiveButton
+                lifecycleScope.launch {
+                    val n = withContext(Dispatchers.IO) { AdNoteApp.instance.repository.renameFolder(folder, to) }
+                    if (selectedFolder == folder) selectedFolder = to
+                    collapsedFolders.remove(folder)
+                    reload()
+                    Toast.makeText(this@MainActivity, "已重命名，影响 $n 篇笔记，下次同步生效", Toast.LENGTH_SHORT).show()
+                }
+            }
+            .setNegativeButton("取消", null)
+            .show()
+    }
+
+    private fun showDissolveFolderDialog(folder: String) {
+        if (folder == Note.DEFAULT_FOLDER) {
+            Toast.makeText(this, "收件箱不能解散", Toast.LENGTH_SHORT).show()
+            return
+        }
+        AlertDialog.Builder(this)
+            .setTitle("解散文件夹")
+            .setMessage("「$folder」及其子文件夹中的笔记将全部移到「${Note.DEFAULT_FOLDER}」。")
+            .setPositiveButton("解散") { _, _ ->
+                lifecycleScope.launch {
+                    val n = withContext(Dispatchers.IO) { AdNoteApp.instance.repository.dissolveFolder(folder) }
+                    if (selectedFolder == folder) selectedFolder = null
+                    collapsedFolders.remove(folder)
+                    reload()
+                    Toast.makeText(this@MainActivity, "已移动 $n 篇笔记", Toast.LENGTH_SHORT).show()
+                }
+            }
+            .setNegativeButton("取消", null)
+            .show()
+    }
+
     private fun triggerSync() {
         val engine = AdNoteApp.instance.syncEngine
         if (engine == null) {
@@ -643,6 +702,7 @@ class NoteAdapter(
     private val onItemLongClick: (NoteSummary) -> Unit,
     private val onHeaderClick: (NoteListItem.Header) -> Unit,
     private val onHeaderAddClick: (String) -> Unit,
+    private val onHeaderLongClick: (NoteListItem.Header) -> Unit,
 ) : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
 
     companion object {
@@ -696,6 +756,10 @@ class NoteAdapter(
             btnAdd.visibility = if (header.isFolder) View.VISIBLE else View.GONE
             btnAdd.setOnClickListener { onHeaderAddClick(header.key) }
             itemView.setOnClickListener { onHeaderClick(header) }
+            itemView.setOnLongClickListener {
+                onHeaderLongClick(header)
+                true
+            }
         }
     }
 
