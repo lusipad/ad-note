@@ -77,9 +77,15 @@ data class SyncState(
     val remoteMdPath: String? = null,
     /** 上次同步后远端 md 的 ETag，用于判断是否在别处被修改过。 */
     val remoteMdEtag: String? = null,
+    /** 上次上传的 md 内容的 SHA-256；服务器不给 ETag 时靠它判断远端是否改过。 */
+    val remoteMdHash: String? = null,
+    /** 上次同步后双方一致的标签，三方合并的基准。 */
+    val syncedTags: List<String> = emptyList(),
     /** 上次同步上传的页面 SVG 数量，删页后用于清理远端多余的 page-NNN.svg。 */
     val remotePageCount: Int = 0,
-    /** 已上传过的录音 id。 */
+    /** 已上传到 _ink/<id>/ 的附件相对路径（录音、图片、背景、PDF）。 */
+    val uploadedAssets: List<String> = emptyList(),
+    /** 旧版本记录的已上传录音 id，只读兼容；新版本改用 [uploadedAssets]。 */
     val uploadedRecordings: List<String> = emptyList(),
 )
 
