@@ -29,6 +29,7 @@
     <string name="settings_remote_dir">远端根目录</string>
     <string name="settings_test_connection">测试连接</string>
     <string name="settings_save">保存配置</string>
+    <string name="settings_restore_from_cloud">从云端恢复笔记</string>
 
     <string name="settings_device_header">设备与画笔信息</string>
     <string name="settings_pen_channel">当前画笔通道：</string>

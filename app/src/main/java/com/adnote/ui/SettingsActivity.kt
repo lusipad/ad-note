@@ -13,6 +13,9 @@ import com.adnote.model.StylusButtonAction
 import com.adnote.pen.DeviceDetector
 import com.adnote.pen.EinkRefresher
 import com.adnote.pen.PenInputFactory
+import com.adnote.sync.LocalState
+import com.adnote.sync.RemoteNoteInfo
+import com.adnote.sync.RestoreEngine
 import com.adnote.sync.SyncSettings
 import com.adnote.sync.WebDavClient
 import kotlinx.coroutines.Dispatchers
@@ -42,6 +45,7 @@ class SettingsActivity : AppCompatActivity() {
     private lateinit var btnFullRefreshTest: Button
     private lateinit var tvModelStatus: TextView
     private lateinit var btnDownloadModel: Button
+    private lateinit var btnRestoreFromCloud: Button
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -75,6 +79,7 @@ class SettingsActivity : AppCompatActivity() {
         btnFullRefreshTest = findViewById(R.id.btnFullRefreshTest)
         tvModelStatus = findViewById(R.id.tvModelStatus)
         btnDownloadModel = findViewById(R.id.btnDownloadModel)
+        btnRestoreFromCloud = findViewById(R.id.btnRestoreFromCloud)
     }
 
     private fun updateOptionButtons() {
@@ -212,6 +217,54 @@ class SettingsActivity : AppCompatActivity() {
                 checkStatus()
             }
         }
+
+        btnRestoreFromCloud.setOnClickListener { startRestoreFromCloud() }
+    }
+
+    private fun startRestoreFromCloud() {
+        val settings = getSettingsFromInput()
+        if (!settings.isConfigured) {
+            Toast.makeText(this, "请先填写完整的服务器地址、用户名及密码", Toast.LENGTH_SHORT).show()
+            return
+        }
+        Toast.makeText(this, "正在扫描远端笔记...", Toast.LENGTH_SHORT).show()
+        val engine = RestoreEngine(
+            AdNoteApp.instance.repository,
+            WebDavClient(settings.serverUrl, settings.username, settings.password, settings.remoteRootDir),
+        )
+        lifecycleScope.launch {
+            val scanned = withContext(Dispatchers.IO) { runCatching { engine.scan() } }
+            val infos = scanned.getOrElse {
+                Toast.makeText(this@SettingsActivity, "扫描失败: ${it.message}", Toast.LENGTH_LONG).show()
+                return@launch
+            }
+            if (infos.isEmpty()) {
+                Toast.makeText(this@SettingsActivity, "远端没有找到 AdNote 笔记", Toast.LENGTH_LONG).show()
+                return@launch
+            }
+            showRestoreDialog(engine, infos)
+        }
+    }
+
+    private fun showRestoreDialog(engine: RestoreEngine, infos: List<RemoteNoteInfo>) {
+        val labels = infos.map { "${it.note.title}  ·  ${it.folder.ifEmpty { "根目录" }}  ·  ${it.localState.displayName}" }.toTypedArray()
+        val checked = BooleanArray(infos.size) { infos[it].localState != LocalState.SAME_OR_NEWER }
+        androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle("选择要恢复的笔记（${infos.size} 篇）")
+            .setMultiChoiceItems(labels, checked) { _, which, isChecked -> checked[which] = isChecked }
+            .setPositiveButton("恢复") { _, _ ->
+                val chosen = infos.filterIndexed { i, _ -> checked[i] }
+                if (chosen.isEmpty()) return@setPositiveButton
+                Toast.makeText(this, "正在恢复 ${chosen.size} 篇...", Toast.LENGTH_SHORT).show()
+                lifecycleScope.launch {
+                    val result = withContext(Dispatchers.IO) { engine.restore(chosen) }
+                    val msg = if (result.failed == 0) "已恢复 ${result.restored} 篇笔记"
+                    else "恢复 ${result.restored} 篇，失败 ${result.failed}\n${result.firstError}"
+                    Toast.makeText(this@SettingsActivity, msg, Toast.LENGTH_LONG).show()
+                }
+            }
+            .setNegativeButton("取消", null)
+            .show()
     }
 
     private fun checkStatus() {

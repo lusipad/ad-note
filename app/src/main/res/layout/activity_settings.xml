@@ -179,6 +179,17 @@
                     android:background="@drawable/bg_button_primary"
                     android:stateListAnimator="@null" />
             </LinearLayout>
+
+            <Button
+                android:id="@+id/btnRestoreFromCloud"
+                android:layout_width="match_parent"
+                android:layout_height="36dp"
+                android:layout_marginTop="8dp"
+                android:text="@string/settings_restore_from_cloud"
+                android:textSize="12sp"
+                android:textColor="@color/text_primary"
+                android:background="@drawable/bg_button_secondary"
+                android:stateListAnimator="@null" />
         </LinearLayout>
 
         <!-- 卡片 2：设备与画笔适配 -->
