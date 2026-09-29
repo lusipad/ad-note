@@ -183,6 +183,22 @@ class NoteRepositoryTest {
         assertEquals(0, repo.dissolveFolder("收件箱"))
         assertEquals("收件箱", repo.load(a.id)!!.folder)
     }
+
+    @Test
+    fun testRenameFolderAfterPendingAsyncSaveIsNotUndone() {
+        val repo = NoteRepository(tempFolder.root)
+        val note = repo.create("a", "工作", 10, 10)
+        repo.saveAsync(note.copy(title = "改过的标题"))
+        assertEquals(1, repo.renameFolder("工作", "公司"))
+        repo.flush()
+
+        val loaded = repo.load(note.id)!!
+        assertEquals("公司", loaded.folder)
+        assertEquals("改过的标题", loaded.title)
+        val fromDisk = NoteRepository(tempFolder.root).load(note.id)!!
+        assertEquals("公司", fromDisk.folder)
+        assertEquals("改过的标题", fromDisk.title)
+    }
 }
 
 class NoteRepositoryTrashTest {
