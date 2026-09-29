@@ -96,29 +96,29 @@ class SyncEngine(
             }
         }
 
-        // 2. 获取远端已有的 Markdown
+        // 2. 获取远端已有的 Markdown，判断 Obsidian 端是否改过，改过则三方合并标签、采用远端正文
         val existingResp = webDavClient.get(targetMdPath)
         var mergedTags = originalNote.tags
         var mergedUserMarkdown = originalNote.userMarkdown
 
         if (existingResp != null) {
-            val parsed = MarkdownComposer.parse(existingResp.body.orEmpty())
-            val remoteUserContent = buildString {
-                append(parsed.before.trim())
-                if (parsed.after.isNotBlank()) {
-                    if (isNotEmpty()) append("\n\n")
-                    append(parsed.after.trim())
-                }
-            }.trim().ifEmpty { null }
-
-            // 如果远端 ETag 与上次记录的不同，说明在 Obsidian 端修改过，采用远端 tags 与用户正文
-            if (existingResp.etag != null && originalNote.sync.remoteMdEtag != null &&
-                existingResp.etag != originalNote.sync.remoteMdEtag
-            ) {
-                parsed.tags?.let { mergedTags = it }
+            val body = existingResp.body.orEmpty()
+            val parsed = MarkdownComposer.parse(body)
+            val remoteUserContent = MarkdownComposer.userContent(parsed)
+            val remoteChanged = RemoteChange.detect(
+                localEtag = originalNote.sync.remoteMdEtag,
+                localHash = originalNote.sync.remoteMdHash,
+                remoteEtag = existingResp.etag,
+                remoteBody = body,
+            )
+            if (remoteChanged) {
+                mergedTags = TagMerge.merge(
+                    base = originalNote.sync.syncedTags,
+                    local = originalNote.tags,
+                    remote = parsed.tags ?: emptyList(),
+                )
                 if (remoteUserContent != null) mergedUserMarkdown = remoteUserContent
             } else if (mergedUserMarkdown == null && remoteUserContent != null) {
-                // 初次连接或本地未存时，拉取远端已有的用户区内容
                 mergedUserMarkdown = remoteUserContent
             }
         }
@@ -161,7 +161,9 @@ class SyncEngine(
         val syncState = SyncState(
             lastSyncedAt = System.currentTimeMillis(),
             remoteMdPath = targetMdPath,
-            remoteMdEtag = putMdResp.etag ?: existingResp?.etag,
+            remoteMdEtag = putMdResp.etag,
+            remoteMdHash = ContentHash.sha256(mdContent),
+            syncedTags = noteWithMerged.tags,
             remotePageCount = noteWithMerged.pages.size,
             uploadedRecordings = uploaded.filter { id -> noteWithMerged.recordings.any { it.id == id } },
         )

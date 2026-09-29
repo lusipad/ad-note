@@ -180,7 +180,8 @@ tags: [Obsidian新标签1, 标签2]
             sync = SyncState(
                 lastSyncedAt = 1000L,
                 remoteMdPath = "收件箱/旧笔记.md",
-                remoteMdEtag = "\"etag-initial-on-device\"" // Different ETag!
+                remoteMdEtag = "\"etag-initial-on-device\"", // Different ETag!
+                syncedTags = listOf("原始本地标签"),
             )
         )
         repository.save(note)
@@ -327,5 +328,93 @@ updated: 2026-03-01T00:00:00+08:00
         assertNotNull(updated)
         assertEquals("这是在电脑 Obsidian 里补充的深度思考与卡片摘录。", updated?.userMarkdown)
         assertTrue(updated?.searchableText()?.contains("深度思考与卡片摘录") == true)
+    }
+
+    @Test
+    fun testTagMergeKeepsLocalAdditions() {
+        val remoteMd = """
+---
+adnote-id: note777
+title: 合并
+tags: [共同, 远端新增]
+---
+
+<!-- adnote:begin 以下内容由 AdNote 自动生成，请勿编辑 -->
+<!-- adnote:end -->
+""".trimIndent()
+        var putBody: String? = null
+        server.dispatcher = object : Dispatcher() {
+            override fun dispatch(request: RecordedRequest): MockResponse = when (request.method) {
+                "MKCOL" -> MockResponse().setResponseCode(201)
+                "GET" -> MockResponse().setResponseCode(200).setBody(remoteMd).setHeader("ETag", "\"pc\"")
+                "PUT" -> {
+                    if (request.path.orEmpty().endsWith(".md")) putBody = request.body.readUtf8()
+                    MockResponse().setResponseCode(201).setHeader("ETag", "\"after\"")
+                }
+                else -> MockResponse().setResponseCode(200)
+            }
+        }
+        val note = com.adnote.model.Note(
+            id = "note777", title = "合并", folder = "收件箱",
+            tags = listOf("共同", "本地新增"),
+            pages = listOf(com.adnote.model.Page(width = 10, height = 10)),
+            createdAt = 1L, updatedAt = 2000L,
+            sync = SyncState(lastSyncedAt = 1000L, remoteMdPath = "收件箱/合并.md", remoteMdEtag = "\"dev\"", syncedTags = listOf("共同")),
+        )
+        repository.save(note)
+
+        syncEngine.sync()
+
+        val synced = repository.load("note777")!!
+        assertEquals(listOf("共同", "本地新增", "远端新增"), synced.tags)
+        assertEquals(listOf("共同", "本地新增", "远端新增"), synced.sync.syncedTags)
+        assertNotNull(synced.sync.remoteMdHash)
+        assertTrue(putBody!!.contains("  - 本地新增"))
+        assertTrue(putBody!!.contains("  - 远端新增"))
+    }
+
+    @Test
+    fun testPutWithoutEtagFallsBackToHash() {
+        val store = ConcurrentHashMap<String, String>()
+        server.dispatcher = object : Dispatcher() {
+            override fun dispatch(request: RecordedRequest): MockResponse {
+                val path = request.path.orEmpty()
+                return when (request.method) {
+                    "MKCOL" -> MockResponse().setResponseCode(201)
+                    "PUT" -> {
+                        store[path] = request.body.readUtf8()
+                        MockResponse().setResponseCode(201)
+                    }
+                    "GET" -> {
+                        val body = store[path]
+                        if (body == null) MockResponse().setResponseCode(404)
+                        else MockResponse().setResponseCode(200).setBody(body)
+                            .setHeader("ETag", "\"" + body.hashCode() + "\"")
+                    }
+                    else -> MockResponse().setResponseCode(200)
+                }
+            }
+        }
+        repository.save(
+            com.adnote.model.Note(
+                id = "noteEtag", title = "无ETag", folder = "收件箱", tags = listOf("a"),
+                pages = listOf(com.adnote.model.Page(width = 10, height = 10)),
+                createdAt = 1L, updatedAt = 1000L,
+            )
+        )
+        syncEngine.sync()
+        var n = repository.load("noteEtag")!!
+
+        // 第 2 次：改标签
+        repository.save(n.copy(tags = listOf("a", "b"), updatedAt = maxOf(n.updatedAt, n.sync.lastSyncedAt) + 1000))
+        syncEngine.sync()
+        n = repository.load("noteEtag")!!
+        assertNull(n.sync.remoteMdEtag)
+
+        // 第 3 次：改正文
+        repository.save(n.copy(userMarkdown = "本地新正文", updatedAt = maxOf(n.updatedAt, n.sync.lastSyncedAt) + 1000))
+        syncEngine.sync()
+        n = repository.load("noteEtag")!!
+        assertEquals("本地新正文", n.userMarkdown)
     }
 }

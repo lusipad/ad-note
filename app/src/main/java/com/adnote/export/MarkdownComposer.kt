@@ -98,6 +98,15 @@ object MarkdownComposer {
 
     fun pageFileName(index: Int): String = "page-%03d.svg".format(index + 1)
 
+    /** 用户区文本：生成区前后的正文合并，空则 null。 */
+    fun userContent(parsed: Parsed): String? = buildString {
+        append(parsed.before.trim())
+        if (parsed.after.isNotBlank()) {
+            if (isNotEmpty()) append("\n\n")
+            append(parsed.after.trim())
+        }
+    }.trim().ifEmpty { null }
+
     fun parse(md: String): Parsed {
         val text = md.replace("\r\n", "\n")
         var body = text
