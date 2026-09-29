@@ -680,4 +680,64 @@ tags: [共同, 远端新增]
         assertEquals(1, syncEngine.sync().pulled)
         assertEquals(listOf("a"), repository.load("lg1")!!.tags)
     }
+
+    @Test
+    fun testFolderMergeDoesNotOverwriteIncumbentMd() {
+        val dav = MemoryDav()
+        val moves = java.util.concurrent.CopyOnWriteArrayList<Pair<String, String>>()
+        server.dispatcher = object : Dispatcher() {
+            override fun dispatch(request: RecordedRequest): MockResponse {
+                if (request.method != "MOVE") return dav.dispatch(request)
+                val from = java.net.URLDecoder.decode(request.path.orEmpty(), "UTF-8").removePrefix("/AdNote").trim('/')
+                val dest = java.net.URLDecoder.decode(request.getHeader("Destination").orEmpty(), "UTF-8").substringAfter("/AdNote/").trim('/')
+                moves += from to dest
+                val file = dav.files.remove(from) ?: return MockResponse().setResponseCode(404)
+                dav.files[dest] = file
+                return MockResponse().setResponseCode(201)
+            }
+        }
+        // 更早创建的 A 在「工作」，更晚创建的 B 在「读书」，标题相同，都已同步
+        val mover = repository.create("会议记录", "工作", 10, 10, now = 1000L)
+        val incumbent = repository.create("会议记录", "读书", 10, 10, now = 2000L)
+        assertEquals(2, syncEngine.sync().success)
+        assertEquals("读书/会议记录.md", repository.load(incumbent.id)!!.sync.remoteMdPath)
+        val incumbentMd = dav.files["读书/会议记录.md"]!!.first
+
+        // 把「工作」并入「读书」：A 搬进来，不能把 B 的 md 覆盖掉
+        val afterSync = repository.load(mover.id)!!.sync.lastSyncedAt + 1
+        assertEquals(1, repository.renameFolder("工作", "读书", now = afterSync))
+        val result = syncEngine.sync()
+        assertEquals(1, result.success)
+        assertTrue(moves.none { it.second == "读书/会议记录.md" })
+        assertEquals(incumbentMd, dav.files["读书/会议记录.md"]!!.first)
+        assertEquals("读书/会议记录.md", repository.load(incumbent.id)!!.sync.remoteMdPath)
+        assertEquals("读书/会议记录 (${mover.id.take(4)}).md", repository.load(mover.id)!!.sync.remoteMdPath)
+    }
+
+    @Test
+    fun testUnreachableServerAbortsAfterFirstNote() {
+        // 占一个端口再关掉：连接被立刻拒绝
+        val port = java.net.ServerSocket(0).use { it.localPort }
+        val attempts = java.util.concurrent.atomic.AtomicInteger()
+        val client = okhttp3.OkHttpClient.Builder()
+            .addInterceptor { chain -> attempts.incrementAndGet(); chain.proceed(chain.request()) }
+            .build()
+        val engine = SyncEngine(
+            repository,
+            WebDavClient(baseUrl = "http://127.0.0.1:$port/", username = "user", password = "pwd", remoteRootDir = "AdNote", client = client),
+        )
+        repository.create("笔记1", "工作", 10, 10)
+        repository.create("笔记2", "工作", 10, 10)
+
+        val started = System.currentTimeMillis()
+        val result = engine.sync()
+        assertTrue(System.currentTimeMillis() - started < 5_000)
+        assertEquals(2, result.total)
+        assertEquals(0, result.success)
+        assertEquals(2, result.failed)
+        assertNotNull(result.firstError)
+        assertTrue(result.firstError!!.contains("无法连接"))
+        // 只试了一个请求就整体中止，没有逐篇再撞一遍
+        assertEquals(1, attempts.get())
+    }
 }

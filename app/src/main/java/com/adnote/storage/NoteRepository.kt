@@ -332,10 +332,10 @@ class NoteRepository(private val root: File) {
      * 目标文件夹已存在时相当于合并。
      */
     fun renameFolder(from: String, to: String, now: Long = System.currentTimeMillis()): Int {
-        flush() // list() 会返回排队中的版本，先落盘再改，避免旧文件夹被后台写入覆盖
         val f = from.trim().trim('/')
         val t = to.trim().trim('/')
         if (f.isEmpty() || t.isEmpty() || f == t) return 0
+        flush() // list() 会返回排队中的版本，先落盘再改，避免旧文件夹被后台写入覆盖
         var n = 0
         for (note in list()) {
             val newFolder = when {
@@ -351,9 +351,9 @@ class NoteRepository(private val root: File) {
 
     /** 解散文件夹：其中（含子文件夹）的笔记全部移到收件箱。收件箱本身不能解散。 */
     fun dissolveFolder(folder: String, now: Long = System.currentTimeMillis()): Int {
-        flush() // list() 会返回排队中的版本，先落盘再改，避免旧文件夹被后台写入覆盖
         val f = folder.trim().trim('/')
         if (f.isEmpty() || f == Note.DEFAULT_FOLDER) return 0
+        flush() // list() 会返回排队中的版本，先落盘再改，避免旧文件夹被后台写入覆盖
         var n = 0
         for (note in list()) {
             if (note.folder != f && !note.folder.startsWith("$f/")) continue
@@ -362,7 +362,6 @@ class NoteRepository(private val root: File) {
         }
         return n
     }
-
 
     companion object {
         private const val DELETED_MARK = ".deleted_at"

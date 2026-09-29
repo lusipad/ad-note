@@ -7,6 +7,10 @@ import com.adnote.model.Note
 import com.adnote.model.NoteJson
 import com.adnote.model.SyncState
 import com.adnote.storage.NoteRepository
+import java.net.ConnectException
+import java.net.NoRouteToHostException
+import java.net.SocketTimeoutException
+import java.net.UnknownHostException
 
 data class SyncResult(
     val total: Int,
@@ -52,6 +56,15 @@ class SyncEngine(
                     firstError = e.message,
                 )
             } catch (e: Exception) {
+                // 服务器连不上：每篇都要等到连接超时，没必要逐篇再试
+                connectionError(e)?.let {
+                    return SyncResult(
+                        total = dirtyNotes.size,
+                        success = successCount,
+                        failed = dirtyNotes.size - successCount,
+                        firstError = it,
+                    )
+                }
                 failedCount++
                 if (firstError == null) {
                     firstError = "${note.title}: ${e.message ?: e.javaClass.simpleName}"
@@ -130,7 +143,7 @@ class SyncEngine(
         return pulled
     }
 
-    /** 逐条删除墓碑对应的远端文件；认证失败返回错误信息，其余失败留待下次。 */
+    /** 逐条删除墓碑对应的远端文件；认证失败或连不上服务器时返回错误信息，其余失败留待下次。 */
     private fun processTombstones(): String? {
         for (tombstone in repository.tombstones()) {
             try {
@@ -139,9 +152,24 @@ class SyncEngine(
                 repository.clearTombstone(tombstone.noteId)
             } catch (e: WebDavAuthException) {
                 return e.message
-            } catch (_: Exception) {
+            } catch (e: Exception) {
+                connectionError(e)?.let { return it }
                 // 删除失败留待下次同步继续尝试
             }
+        }
+        return null
+    }
+
+    /** 连接层面的失败（拒绝连接、域名解析失败、连接超时、无路由）返回可读信息，其余返回 null。 */
+    private fun connectionError(e: Throwable): String? {
+        var cause: Throwable? = e
+        while (cause != null) {
+            if (cause is ConnectException || cause is UnknownHostException ||
+                cause is SocketTimeoutException || cause is NoRouteToHostException
+            ) {
+                return "无法连接 WebDAV 服务器: ${cause.message ?: cause.javaClass.simpleName}"
+            }
+            cause = cause.cause
         }
         return null
     }

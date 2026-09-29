@@ -4,6 +4,7 @@ import android.app.Application
 import android.content.Context
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
+import android.util.Log
 import com.adnote.ink.ClipContent
 import com.adnote.model.StylusButtonAction
 import com.adnote.model.ToolState
@@ -78,6 +79,9 @@ class AdNoteApp : Application() {
     private val syncLock = Any()
     @Volatile private var syncRunning = false
     @Volatile private var lastAutoSyncAt = 0L
+
+    /** 是否正有一次同步在跑。 */
+    val isSyncing: Boolean get() = syncRunning
 
     /** 主界面在前台时注册，自动同步结束后刷新列表；在主线程回调。 */
     @Volatile var onSyncFinished: ((SyncResult) -> Unit)? = null
@@ -198,8 +202,10 @@ class AdNoteApp : Application() {
                 now = System.currentTimeMillis(),
             )
             if (!ok) return@launch
+            val result = runCatching { runSyncBlocking() }
+                .onFailure { Log.w("AdNoteApp", "auto sync failed", it) }
+                .getOrNull() ?: return@launch
             lastAutoSyncAt = System.currentTimeMillis()
-            val result = runCatching { runSyncBlocking() }.getOrNull() ?: return@launch
             onSyncFinished?.let { cb -> withContext(Dispatchers.Main) { cb(result) } }
         }
     }

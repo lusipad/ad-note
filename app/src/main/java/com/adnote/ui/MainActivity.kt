@@ -674,6 +674,10 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
+        if (AdNoteApp.instance.isSyncing) {
+            Toast.makeText(this, "正在同步，请稍候", Toast.LENGTH_SHORT).show()
+            return
+        }
         Toast.makeText(this, "正在同步中...", Toast.LENGTH_SHORT).show()
         lifecycleScope.launch {
             val result = withContext(Dispatchers.IO) { AdNoteApp.instance.runSyncBlocking() }
