@@ -2,6 +2,8 @@ package com.adnote.ui
 
 import android.app.Application
 import android.content.Context
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import com.adnote.ink.ClipContent
 import com.adnote.model.StylusButtonAction
 import com.adnote.model.ToolState
@@ -9,8 +11,15 @@ import com.adnote.recognition.MlKitRecognizer
 import com.adnote.recognition.Recognizer
 import com.adnote.storage.NoteRepository
 import com.adnote.sync.SyncEngine
+import com.adnote.sync.SyncPolicy
+import com.adnote.sync.SyncResult
 import com.adnote.sync.SyncSettings
 import com.adnote.sync.WebDavClient
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class AdNoteApp : Application() {
 
@@ -60,6 +69,19 @@ class AdNoteApp : Application() {
     var fullRefreshEvery: Int = 6
         private set
 
+    /** 离开编辑器、回到主界面时自动同步（需已配置 WebDAV、有网络、有待同步笔记）。 */
+    var autoSync: Boolean = true
+        private set
+
+    private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val syncPolicy = SyncPolicy()
+    private val syncLock = Any()
+    @Volatile private var syncRunning = false
+    @Volatile private var lastAutoSyncAt = 0L
+
+    /** 主界面在前台时注册，自动同步结束后刷新列表；在主线程回调。 */
+    @Volatile var onSyncFinished: ((SyncResult) -> Unit)? = null
+
     /** 套索复制/剪切的内容，可跨页、跨笔记粘贴。 */
     var clipboard: ClipContent? = null
 
@@ -92,6 +114,7 @@ class AdNoteApp : Application() {
             StylusButtonAction.valueOf(prefs.getString("stylus_button", null) ?: "ERASER")
         }.getOrDefault(StylusButtonAction.ERASER)
         fullRefreshEvery = prefs.getInt("full_refresh_every", 6)
+        autoSync = prefs.getBoolean("auto_sync", true)
 
         syncEngine = if (syncSettings.isConfigured) {
             val client = WebDavClient(
@@ -138,6 +161,48 @@ class AdNoteApp : Application() {
     }
 
     fun setFullRefreshEvery(v: Int) { fullRefreshEvery = v; prefs().edit().putInt("full_refresh_every", v).apply() }
+
+    fun setAutoSync(v: Boolean) { autoSync = v; prefs().edit().putBoolean("auto_sync", v).apply() }
+
+    /** 跑一次完整同步。未配置或已有同步在跑时返回 null。必须在 IO 线程调用。 */
+    fun runSyncBlocking(): SyncResult? {
+        val engine = syncEngine ?: return null
+        synchronized(syncLock) {
+            if (syncRunning) return null
+            syncRunning = true
+        }
+        return try {
+            engine.sync()
+        } finally {
+            syncRunning = false
+        }
+    }
+
+    private fun isOnline(): Boolean {
+        val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        val caps = cm.getNetworkCapabilities(cm.activeNetwork) ?: return false
+        return caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+    }
+
+    /** 满足 [SyncPolicy] 才在后台同步一次；结果通过 [onSyncFinished] 通知主界面。 */
+    fun requestAutoSync() {
+        if (!autoSync || syncEngine == null) return
+        appScope.launch {
+            val hasDirty = runCatching { repository.summaries().any { it.isDirty } }.getOrDefault(false)
+            val ok = syncPolicy.shouldRun(
+                enabled = autoSync,
+                configured = syncEngine != null,
+                online = runCatching { isOnline() }.getOrDefault(false),
+                hasDirty = hasDirty,
+                lastRunAt = lastAutoSyncAt,
+                now = System.currentTimeMillis(),
+            )
+            if (!ok) return@launch
+            lastAutoSyncAt = System.currentTimeMillis()
+            val result = runCatching { runSyncBlocking() }.getOrNull() ?: return@launch
+            onSyncFinished?.let { cb -> withContext(Dispatchers.Main) { cb(result) } }
+        }
+    }
 
     fun saveToolState(state: ToolState) {
         toolState = state

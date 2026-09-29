@@ -40,6 +40,7 @@ class SettingsActivity : AppCompatActivity() {
     private lateinit var cbScratchOut: CheckBox
     private lateinit var cbShapeHold: CheckBox
     private lateinit var cbAutoRecognize: CheckBox
+    private lateinit var cbAutoSync: CheckBox
     private lateinit var btnStylusButton: Button
     private lateinit var btnFullRefreshEvery: Button
     private lateinit var btnFullRefreshTest: Button
@@ -74,6 +75,7 @@ class SettingsActivity : AppCompatActivity() {
         cbScratchOut = findViewById(R.id.cbScratchOut)
         cbShapeHold = findViewById(R.id.cbShapeHold)
         cbAutoRecognize = findViewById(R.id.cbAutoRecognize)
+        cbAutoSync = findViewById(R.id.cbAutoSync)
         btnStylusButton = findViewById(R.id.btnStylusButton)
         btnFullRefreshEvery = findViewById(R.id.btnFullRefreshEvery)
         btnFullRefreshTest = findViewById(R.id.btnFullRefreshTest)
@@ -103,6 +105,7 @@ class SettingsActivity : AppCompatActivity() {
         cbScratchOut.isChecked = app.scratchOut
         cbShapeHold.isChecked = app.shapeHold
         cbAutoRecognize.isChecked = app.autoRecognize
+        cbAutoSync.isChecked = app.autoSync
         updateOptionButtons()
     }
 
@@ -135,6 +138,7 @@ class SettingsActivity : AppCompatActivity() {
         cbScratchOut.setOnCheckedChangeListener { _, v -> AdNoteApp.instance.setScratchOut(v) }
         cbShapeHold.setOnCheckedChangeListener { _, v -> AdNoteApp.instance.setShapeHold(v) }
         cbAutoRecognize.setOnCheckedChangeListener { _, v -> AdNoteApp.instance.setAutoRecognize(v) }
+        cbAutoSync.setOnCheckedChangeListener { _, v -> AdNoteApp.instance.setAutoSync(v) }
 
         btnStylusButton.setOnClickListener {
             val actions = StylusButtonAction.entries

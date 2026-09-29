@@ -190,6 +190,15 @@
                 android:textColor="@color/text_primary"
                 android:background="@drawable/bg_button_secondary"
                 android:stateListAnimator="@null" />
+
+            <CheckBox
+                android:id="@+id/cbAutoSync"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:text="离开编辑器后自动同步（有网络且有待同步笔记时）"
+                android:textSize="13sp"
+                android:textColor="@color/text_primary" />
         </LinearLayout>
 
         <!-- 卡片 2：设备与画笔适配 -->

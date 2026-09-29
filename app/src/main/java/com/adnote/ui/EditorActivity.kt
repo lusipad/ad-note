@@ -2493,6 +2493,8 @@ class EditorActivity : AppCompatActivity() {
             // 离开编辑器（切到别的应用、熄屏）时确保写到磁盘，进程随后被系统回收也不丢
             repo.flush()
             autoRecognize(currentPageIndex)
+            // 退出编辑器（不是熄屏/切后台）：后台同步一次
+            if (isFinishing) app.requestAutoSync()
         }
         app.saveToolState(tools)
     }

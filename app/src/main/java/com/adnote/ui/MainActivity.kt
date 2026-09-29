@@ -92,7 +92,6 @@ class MainActivity : AppCompatActivity() {
     private var trashCount = 0
     private var loaded = false
     private var reloadJob: kotlinx.coroutines.Job? = null
-    private var syncing = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -285,7 +284,17 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        AdNoteApp.instance.onSyncFinished = { result ->
+            reload()
+            if (result.failed > 0) Toast.makeText(this, syncMessage(result), Toast.LENGTH_LONG).show()
+        }
         reload()
+        AdNoteApp.instance.requestAutoSync()
+    }
+
+    override fun onPause() {
+        super.onPause()
+        AdNoteApp.instance.onSyncFinished = null
     }
 
     /** 在后台重新读取全部笔记（打开的笔记还没写完的保存也会读到最新版本），然后刷新列表和筛选条。 */
@@ -665,26 +674,24 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
-        if (syncing) {
-            Toast.makeText(this, "正在同步，请稍候", Toast.LENGTH_SHORT).show()
-            return
-        }
-        syncing = true
         Toast.makeText(this, "正在同步中...", Toast.LENGTH_SHORT).show()
         lifecycleScope.launch {
-            val result = try {
-                withContext(Dispatchers.IO) { engine.sync() }
-            } finally {
-                syncing = false
+            val result = withContext(Dispatchers.IO) { AdNoteApp.instance.runSyncBlocking() }
+            if (result == null) {
+                Toast.makeText(this@MainActivity, "正在同步，请稍候", Toast.LENGTH_SHORT).show()
+                return@launch
             }
-            val pulledText = if (result.pulled > 0) "，拉取 Obsidian 修改 ${result.pulled} 篇" else ""
-            val msg = if (result.failed == 0) {
-                "同步完成：成功 ${result.success} 篇笔记$pulledText"
-            } else {
-                "同步完成：成功 ${result.success}，失败 ${result.failed}$pulledText\n错误: ${result.firstError}"
-            }
-            Toast.makeText(this@MainActivity, msg, Toast.LENGTH_LONG).show()
+            Toast.makeText(this@MainActivity, syncMessage(result), Toast.LENGTH_LONG).show()
             reload()
+        }
+    }
+
+    private fun syncMessage(result: com.adnote.sync.SyncResult): String {
+        val pulledText = if (result.pulled > 0) "，拉取 Obsidian 修改 ${result.pulled} 篇" else ""
+        return if (result.failed == 0) {
+            "同步完成：成功 ${result.success} 篇笔记$pulledText"
+        } else {
+            "同步完成：成功 ${result.success}，失败 ${result.failed}$pulledText\n错误: ${result.firstError}"
         }
     }
 
