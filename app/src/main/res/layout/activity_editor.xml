@@ -286,6 +286,34 @@
                         android:layout_marginHorizontal="8dp"
                         android:background="@color/border_hairline" />
 
+                    <ImageButton
+                        android:padding="7dp"
+                        android:scaleType="fitCenter"
+                        android:id="@+id/btnUndo"
+                        android:layout_width="40dp"
+                        android:layout_height="36dp"
+                        android:background="@drawable/bg_button_secondary"
+                        android:src="@drawable/ic_undo"
+                        android:contentDescription="撤销"
+                        android:layout_marginEnd="6dp" />
+
+                    <ImageButton
+                        android:padding="7dp"
+                        android:scaleType="fitCenter"
+                        android:id="@+id/btnRedo"
+                        android:layout_width="40dp"
+                        android:layout_height="36dp"
+                        android:background="@drawable/bg_button_secondary"
+                        android:src="@drawable/ic_redo"
+                        android:contentDescription="重做" />
+
+                    <View
+                        android:id="@+id/dividerTool2"
+                        android:layout_width="1dp"
+                        android:layout_height="24dp"
+                        android:layout_marginHorizontal="8dp"
+                        android:background="@color/border_hairline" />
+
                     <!-- 常用画笔快捷预设托盘 (3个预设位，支持一键切换与长按保存) -->
                     <LinearLayout
                         android:id="@+id/layoutPenPresets"
@@ -370,7 +398,7 @@
                     </LinearLayout>
 
                     <View
-                        android:id="@+id/dividerTool2"
+                        android:id="@+id/dividerTool3"
                         android:layout_width="1dp"
                         android:layout_height="24dp"
                         android:layout_marginHorizontal="8dp"
@@ -391,34 +419,6 @@
                         android:textSize="12sp"
                         android:textColor="@color/text_secondary"
                         android:visibility="gone" />
-
-                    <View
-                        android:id="@+id/dividerTool3"
-                        android:layout_width="1dp"
-                        android:layout_height="24dp"
-                        android:layout_marginHorizontal="8dp"
-                        android:background="@color/border_hairline" />
-
-                    <ImageButton
-                        android:padding="7dp"
-                        android:scaleType="fitCenter"
-                        android:id="@+id/btnUndo"
-                        android:layout_width="40dp"
-                        android:layout_height="36dp"
-                        android:background="@drawable/bg_button_secondary"
-                        android:src="@drawable/ic_undo"
-                        android:contentDescription="撤销"
-                        android:layout_marginEnd="6dp" />
-
-                    <ImageButton
-                        android:padding="7dp"
-                        android:scaleType="fitCenter"
-                        android:id="@+id/btnRedo"
-                        android:layout_width="40dp"
-                        android:layout_height="36dp"
-                        android:background="@drawable/bg_button_secondary"
-                        android:src="@drawable/ic_redo"
-                        android:contentDescription="重做" />
 
                     <View
                         android:id="@+id/dividerTool4"

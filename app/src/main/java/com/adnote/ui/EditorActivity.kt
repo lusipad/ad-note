@@ -820,6 +820,12 @@ class EditorActivity : AppCompatActivity() {
         }
         toolButtons.values.forEach { it.layoutParams = toolBtnParams }
 
+        btnUndo.layoutParams = toolBtnParams
+        btnRedo.layoutParams = LinearLayout.LayoutParams((40 * density).toInt(), (36 * density).toInt())
+
+        val extraActionBtns = listOf(btnRuler, btnInsertImage, findViewById<View>(R.id.btnLayers), btnRecord)
+        extraActionBtns.forEach { it?.layoutParams = toolBtnParams }
+
         val slotMargin = (4 * density).toInt()
         val slotParamsWithMargin = if (isVertical) {
             LinearLayout.LayoutParams((38 * density).toInt(), (36 * density).toInt()).apply {
@@ -1090,10 +1096,16 @@ class EditorActivity : AppCompatActivity() {
 
     private fun updateUndoRedo() {
         val h = history()
+        val undoChanged = btnUndo.isEnabled != h.canUndo
+        val redoChanged = btnRedo.isEnabled != h.canRedo
         btnUndo.isEnabled = h.canUndo
         btnUndo.alpha = if (h.canUndo) 1f else 0.35f
         btnRedo.isEnabled = h.canRedo
         btnRedo.alpha = if (h.canRedo) 1f else 0.35f
+        if (undoChanged || redoChanged) {
+            EinkRefresher.refreshFast(btnUndo)
+            EinkRefresher.refreshFast(btnRedo)
+        }
     }
 
     private fun confirmClearPage() {
