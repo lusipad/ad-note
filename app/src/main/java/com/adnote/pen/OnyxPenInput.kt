@@ -5,10 +5,12 @@ import android.graphics.Rect
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
+import android.view.MotionEvent
 import android.view.View
 import com.adnote.ink.RawStrokeCollector
 import com.adnote.model.InkPoint
 import com.adnote.model.PenType
+import com.adnote.model.StylusButtonAction
 import com.onyx.android.sdk.data.note.TouchPoint
 import com.onyx.android.sdk.pen.RawInputCallback
 import com.onyx.android.sdk.pen.TouchHelper
@@ -20,6 +22,7 @@ class OnyxPenInput : PenInput {
 
     private var touchHelper: TouchHelper? = null
     private var listener: PenInputListener? = null
+    private var attachedView: View? = null
     private val mainHandler = Handler(Looper.getMainLooper())
 
     /** 设备压感最大值：不同型号不同（4096 / 8192），优先向固件查询。 */
@@ -80,6 +83,19 @@ class OnyxPenInput : PenInput {
             override fun onRawErasingTouchPointListReceived(touchPointList: TouchPointList) {
                 eraseCollector.list(touchPointList.points.map { it.toInkPoint() })
             }
+        }
+
+        this.attachedView = view
+        view.setOnHoverListener { _, event ->
+            val toolType = event.getToolType(0)
+            if (toolType == MotionEvent.TOOL_TYPE_STYLUS || toolType == MotionEvent.TOOL_TYPE_ERASER) {
+                when (event.actionMasked) {
+                    MotionEvent.ACTION_HOVER_ENTER, MotionEvent.ACTION_HOVER_MOVE ->
+                        listener.onHover(event.x, event.y, toolType == MotionEvent.TOOL_TYPE_ERASER)
+                    MotionEvent.ACTION_HOVER_EXIT -> listener.onHoverExit()
+                }
+            }
+            false
         }
 
         try {
@@ -163,10 +179,18 @@ class OnyxPenInput : PenInput {
         }.onFailure { Log.w("OnyxPenInput", "当前 SDK 不支持排除区域: ${it.message}") }
     }
 
+    override fun setStylusButtonAction(action: StylusButtonAction) {
+        runCatching {
+            touchHelper?.enableSideBtnErase(action == StylusButtonAction.ERASER)
+        }
+    }
+
     override fun detach() {
         runCatching {
             touchHelper?.closeRawDrawing()
+            attachedView?.setOnHoverListener(null)
         }
+        attachedView = null
         touchHelper = null
         listener = null
     }

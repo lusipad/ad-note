@@ -55,6 +55,10 @@ class AdNoteApp : Application() {
     var fingerSwipePaging: Boolean = true
         private set
 
+    /** 双指点按撤销、三指点按重做。 */
+    var multiFingerUndo: Boolean = true
+        private set
+
     /** 翻页后自动识别离开页面的手写（需已下载离线模型）。 */
     var autoRecognize: Boolean = true
         private set
@@ -114,6 +118,7 @@ class AdNoteApp : Application() {
         preferOnyx = prefs.getBoolean("prefer_onyx", true)
         volumeKeyPaging = prefs.getBoolean("volume_key_paging", true)
         fingerSwipePaging = prefs.getBoolean("finger_swipe_paging", true)
+        multiFingerUndo = prefs.getBoolean("multi_finger_undo", true)
         toolState = ToolState.fromJson(prefs.getString("tool_state", null))
         autoRecognize = prefs.getBoolean("auto_recognize", true)
         scratchOut = prefs.getBoolean("scratch_out", true)
@@ -160,6 +165,11 @@ class AdNoteApp : Application() {
     fun setFingerSwipePaging(enabled: Boolean) {
         fingerSwipePaging = enabled
         getSharedPreferences("adnote_settings", Context.MODE_PRIVATE).edit().putBoolean("finger_swipe_paging", enabled).apply()
+    }
+
+    fun setMultiFingerUndo(enabled: Boolean) {
+        multiFingerUndo = enabled
+        getSharedPreferences("adnote_settings", Context.MODE_PRIVATE).edit().putBoolean("multi_finger_undo", enabled).apply()
     }
 
     private fun prefs() = getSharedPreferences("adnote_settings", Context.MODE_PRIVATE)

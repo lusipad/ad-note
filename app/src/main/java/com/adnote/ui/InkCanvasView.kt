@@ -528,14 +528,20 @@ class InkCanvasView @JvmOverloads constructor(
     private fun penRecentlyActive(): Boolean =
         penDown || android.os.SystemClock.uptimeMillis() - lastPenTime < PALM_WINDOW_MS
 
-    /** 接触面积明显大于指尖，或驱动直接上报为手掌。 */
+    /** 接触面积明显大于指尖，或驱动直接上报为手掌，或多接触点间距过大（手掌接触）。 */
     private fun isPalm(e: MotionEvent): Boolean {
         val limit = PALM_DP * density
-        return (0 until e.pointerCount).any { idx ->
+        if ((0 until e.pointerCount).any { idx ->
             e.getToolType(idx) == TOOL_TYPE_PALM ||
                 (e.getTouchMajor(idx) > 0f && e.getTouchMajor(idx) > limit) ||
-                e.getSize(idx) > 0.4f
+                e.getSize(idx) > 0.25f
+        }) return true
+
+        // 多指接触时，若两点间距明显大于两指自然并拢间距（如小鱼际与指关节同时压屏），判定为手掌
+        if (e.pointerCount >= 2 && distance(e) > MAX_MULTI_TAP_DIST_DP * density) {
+            return true
         }
+        return false
     }
 
     /**
@@ -667,7 +673,13 @@ class InkCanvasView @JvmOverloads constructor(
         val duration = e.eventTime - downTime
         val tapSlop = 12f * density
         if (maxPointers >= 2) {
-            if (duration < MULTI_TAP_MS && travel < 40f * density && (mode == Mode.PAN || mode == Mode.PINCH || mode == Mode.NONE)) {
+            // 防误触：仅当未开启防误触模式、两指间距在自然并拢范围（排除手掌分散接触点）、
+            // 且最近没有提笔书写/悬停时，才允许响应双指/三指点按撤销重做，避免手掌压屏消字
+            val fingersClose = pinchStartDist <= MAX_MULTI_TAP_DIST_DP * density
+            if (!stylusOnly && fingersClose && !penRecentlyActive() &&
+                duration < MULTI_TAP_MS && travel < 40f * density &&
+                (mode == Mode.PAN || mode == Mode.PINCH || mode == Mode.NONE)
+            ) {
                 pinchStartVp?.let { applyViewport(it, notify = false) }
                 listener?.onMultiFingerTap(maxPointers)
             }
@@ -795,10 +807,12 @@ class InkCanvasView @JvmOverloads constructor(
     companion object {
         private const val TOOL_TYPE_PALM = 5
         private const val SWIPE_MIN_DP = 80f
-        /** 接触长轴超过这个尺寸（dp）视为手掌。 */
-        private const val PALM_DP = 28f
-        /** 笔抬起后这么久之内的手指触摸视为手掌误触。 */
-        private const val PALM_WINDOW_MS = 600L
+        /** 接触长轴超过这个尺寸（dp）视为手掌。降低阈值以更灵敏地识别大接触面。 */
+        private const val PALM_DP = 20f
+        /** 笔抬起后这么久之内的手指触摸视为手掌误触（延长到 2 秒，覆盖书写换行与停顿的自然间隔）。 */
+        private const val PALM_WINDOW_MS = 2000L
+        /** 真正的双指点按两指间距上限（dp），超过此间距必然是手掌两端而非并拢双指。 */
+        private const val MAX_MULTI_TAP_DIST_DP = 70f
         private const val TAP_MS = 300L
         private const val DOUBLE_TAP_MS = 350L
         private const val MULTI_TAP_MS = 350L

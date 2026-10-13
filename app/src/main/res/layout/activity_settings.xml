@@ -281,6 +281,15 @@
                 android:layout_marginBottom="6dp" />
 
             <CheckBox
+                android:id="@+id/cbMultiFingerUndo"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="双指点按撤销、三指点按重做（手掌易误触时建议关闭）"
+                android:textSize="13sp"
+                android:textColor="@color/text_primary"
+                android:layout_marginBottom="6dp" />
+
+            <CheckBox
                 android:id="@+id/cbScratchOut"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"

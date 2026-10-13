@@ -38,6 +38,7 @@ class SettingsActivity : AppCompatActivity() {
     private lateinit var cbPreferOnyx: CheckBox
     private lateinit var cbVolumeKeyPaging: CheckBox
     private lateinit var cbFingerSwipePaging: CheckBox
+    private lateinit var cbMultiFingerUndo: CheckBox
     private lateinit var cbScratchOut: CheckBox
     private lateinit var cbShapeHold: CheckBox
     private lateinit var cbAutoRecognize: CheckBox
@@ -74,6 +75,7 @@ class SettingsActivity : AppCompatActivity() {
         cbPreferOnyx = findViewById(R.id.cbPreferOnyx)
         cbVolumeKeyPaging = findViewById(R.id.cbVolumeKeyPaging)
         cbFingerSwipePaging = findViewById(R.id.cbFingerSwipePaging)
+        cbMultiFingerUndo = findViewById(R.id.cbMultiFingerUndo)
         cbScratchOut = findViewById(R.id.cbScratchOut)
         cbShapeHold = findViewById(R.id.cbShapeHold)
         cbAutoRecognize = findViewById(R.id.cbAutoRecognize)
@@ -106,6 +108,7 @@ class SettingsActivity : AppCompatActivity() {
         cbPreferOnyx.isChecked = app.preferOnyx
         cbVolumeKeyPaging.isChecked = app.volumeKeyPaging
         cbFingerSwipePaging.isChecked = app.fingerSwipePaging
+        cbMultiFingerUndo.isChecked = app.multiFingerUndo
         cbScratchOut.isChecked = app.scratchOut
         cbShapeHold.isChecked = app.shapeHold
         cbAutoRecognize.isChecked = app.autoRecognize
@@ -137,6 +140,10 @@ class SettingsActivity : AppCompatActivity() {
 
         cbFingerSwipePaging.setOnCheckedChangeListener { _, isChecked ->
             AdNoteApp.instance.setFingerSwipePaging(isChecked)
+        }
+
+        cbMultiFingerUndo.setOnCheckedChangeListener { _, isChecked ->
+            AdNoteApp.instance.setMultiFingerUndo(isChecked)
         }
 
         cbScratchOut.setOnCheckedChangeListener { _, v -> AdNoteApp.instance.setScratchOut(v) }

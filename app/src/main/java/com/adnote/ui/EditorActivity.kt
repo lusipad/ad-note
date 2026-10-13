@@ -387,6 +387,7 @@ class EditorActivity : AppCompatActivity() {
             override fun onTap(pageX: Float, pageY: Float) = handleTap(pageX, pageY, byPen = false)
 
             override fun onMultiFingerTap(fingers: Int) {
+                if (!app.multiFingerUndo) return
                 if (fingers == 2) undo() else if (fingers >= 3) redo()
             }
 
