@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 当前工具：黑底（图标反白）。墨水屏只有 16 级灰，浅灰底色和白色分不清，反色是唯一一眼能看出的选中状态；不用水波纹，避免按压动画引起多次刷新 -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <solid android:color="@color/brand_black" />
+    <corners android:radius="8dp" />
+</shape>

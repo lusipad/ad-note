@@ -329,13 +329,21 @@ class EditorActivity : AppCompatActivity() {
         btnAddPage.setOnClickListener { insertPageAfter(currentPageIndex) }
         findViewById<View>(R.id.btnPages).setOnClickListener { showPageOverview() }
         findViewById<View>(R.id.btnRecognize).setOnClickListener { recognizeCurrentPage() }
-        findViewById<View>(R.id.btnRefresh).setOnClickListener { withPenPaused { EinkRefresher.fullRefresh(inkCanvas) } }
+        findViewById<View>(R.id.btnRefresh).setOnClickListener {
+            withPenPaused { inkCanvas.doAfterNextDraw { EinkRefresher.fullRefresh(inkCanvas) } }
+        }
         findViewById<View>(R.id.btnMore).setOnClickListener { showMoreMenu(it) }
 
         toolButtons.forEach { (tool, btn) ->
             btn.setOnClickListener {
-                // 再点一次打开设置；套索的「设置」是粘贴，只响应长按，避免误粘贴
-                if (tools.tool == tool) { if (tool != Tool.LASSO) openToolSettings(tool) } else selectTool(tool)
+                // 再点一次打开设置。橡皮例外：擦除方式和大小已经直接摆在工具栏上，
+                // 墨水屏上点了没马上变色时用户常会再点一次，不能因此弹出对话框；
+                // 套索的「设置」是粘贴，同样只响应长按，避免误粘贴
+                if (tools.tool == tool) {
+                    if (tool != Tool.LASSO && tool != Tool.ERASER) openToolSettings(tool)
+                } else {
+                    selectTool(tool)
+                }
             }
             btn.setOnLongClickListener { openToolSettings(tool); true }
         }
@@ -556,18 +564,26 @@ class EditorActivity : AppCompatActivity() {
 
     /** 同步工具栏外观、画笔通道参数，并持久化工具状态。 */
     private fun applyTools() {
-        toolButtons.forEach { (tool, btn) ->
-            btn.setBackgroundResource(if (tool == tools.tool) R.drawable.bg_tool_selected else R.drawable.bg_button_secondary)
+        // 工具栏在直绘开启时不会刷新到墨水屏上：暂停直绘，等这一帧画完再恢复，点了马上能看到切换
+        withPenPaused {
+            toolButtons.forEach { (tool, btn) -> setToolActive(btn, tool == tools.tool) }
+            refreshPresets()
+            refreshQuickColors()
+            if (tools.tool != Tool.ERASER) inkCanvas.hideEraserCursor()
+            if (tools.tool != Tool.LASSO) {
+                inkCanvas.setLassoPath(emptyList())
+                exitSelection()
+            }
+            applyPenInputStyle()
+            EinkRefresher.refreshFast(toolbar)
         }
-        refreshPresets()
-        refreshQuickColors()
-        if (tools.tool != Tool.ERASER) inkCanvas.hideEraserCursor()
-        if (tools.tool != Tool.LASSO) {
-            inkCanvas.setLassoPath(emptyList())
-            exitSelection()
-        }
-        applyPenInputStyle()
         app.saveToolState(tools)
+    }
+
+    /** 当前工具反色显示（黑底白图标），其余为普通按钮。 */
+    private fun setToolActive(btn: ImageButton, active: Boolean) {
+        btn.setBackgroundResource(if (active) R.drawable.bg_tool_active else R.drawable.bg_button_secondary)
+        btn.imageTintList = if (active) android.content.res.ColorStateList.valueOf(android.graphics.Color.WHITE) else null
     }
 
     private fun applyPenInputStyle() {
@@ -577,18 +593,18 @@ class EditorActivity : AppCompatActivity() {
         val scale = inkCanvas.viewport.scale
         val density = resources.displayMetrics.density
         val page = note.pages.getOrNull(currentPageIndex)
-        // PDF 原文或自定义背景图上，纸色轨迹会盖住底图，不能用来预览擦除
-        val plainPaper = page != null && !note.isPdf && page.backgroundImage == null
+        // PDF 原文、自定义背景图或带底纹（横线/方格/康奈尔等）的页面上，纸色轨迹会盖住底图与底纹，不能用来预览擦除
+        val plainPaper = page != null && !note.isPdf && page.backgroundImage == null && page.template == com.adnote.model.PageTemplate.BLANK
         runCatching {
             when {
                 tool == Tool.ERASER && plainPaper -> {
-                    // 橡皮：硬件直绘层画一条纸色粗线，宽度等于橡皮直径，擦过的地方立即变白，抬笔后按真实擦除结果刷新
+                    // 纯白空白页：硬件直绘层画纸色粗线，宽度等于橡皮直径，擦过的地方立即变白，抬笔后按真实擦除结果刷新
                     input.setEraserTrailStyle()
                     input.setStrokeColor(StrokePainter.parseColor(PaperPresets.find(page!!.backgroundColor).hex))
                     input.setStrokeWidth(tools.eraserRadius * 2f * scale)
                 }
                 tool == Tool.ERASER || tool == Tool.LASSO -> {
-                    // 套索、底图上的橡皮：细虚线显示轨迹，不遮挡内容
+                    // 套索、底图或底纹（横线/方格）上的橡皮：细虚线显示轨迹，不遮挡底纹内容
                     input.setDashStyle()
                     input.setStrokeColor(StrokePainter.parseColor(GUIDE_COLOR))
                     input.setStrokeWidth(1.5f * density)
@@ -684,7 +700,8 @@ class EditorActivity : AppCompatActivity() {
     }
 
     private fun updatePresetSlot(slot: View, tv: TextView, dot: View, preset: PenPreset, isActive: Boolean) {
-        slot.setBackgroundResource(if (isActive) R.drawable.bg_tool_selected else R.drawable.bg_button_secondary)
+        slot.setBackgroundResource(if (isActive) R.drawable.bg_tool_active else R.drawable.bg_button_secondary)
+        tv.setTextColor(if (isActive) android.graphics.Color.WHITE else getColor(R.color.text_primary))
         tv.text = when {
             preset.tool == Tool.HIGHLIGHTER -> "荧"
             preset.width <= 2.2f -> "0.5"
@@ -696,7 +713,9 @@ class EditorActivity : AppCompatActivity() {
         val dotDrawable = android.graphics.drawable.GradientDrawable().apply {
             shape = android.graphics.drawable.GradientDrawable.OVAL
             setColor(colorInt)
-            setStroke((1 * density).toInt(), android.graphics.Color.parseColor("#80888888"))
+            // 选中时槽位是黑底，白圈保证黑色圆点仍然看得见
+            if (isActive) setStroke((1.5f * density).toInt(), android.graphics.Color.WHITE)
+            else setStroke((1 * density).toInt(), android.graphics.Color.parseColor("#80888888"))
         }
         dot.background = dotDrawable
         val tip = if (preset.tool == Tool.HIGHLIGHTER) {
@@ -1396,7 +1415,7 @@ class EditorActivity : AppCompatActivity() {
         val cur = note.pages[currentPageIndex]
         withPenPaused {
             inkCanvas.updatePage(page().let { c -> cur.copy(strokes = c.strokes, texts = c.texts, images = c.images, layers = c.layers) })
-            EinkRefresher.fullRefresh(inkCanvas)
+            inkCanvas.doAfterNextDraw { EinkRefresher.fullRefresh(inkCanvas) }
         }
         updatePageIndicator()
         // 纸色、页面尺寸可能变了：橡皮直绘色、笔宽缩放与书写区域随之更新
@@ -1696,7 +1715,7 @@ class EditorActivity : AppCompatActivity() {
         withPenPaused { loadPage(index) }
         note = note.copy(lastPageIndex = index)
         saveNow()
-        inkCanvas.post { EinkRefresher.onPageTurned(inkCanvas, app.fullRefreshEvery) }
+        inkCanvas.doAfterNextDraw { EinkRefresher.onPageTurned(inkCanvas, app.fullRefreshEvery) }
     }
 
     private fun prevPage() {
@@ -2321,7 +2340,7 @@ class EditorActivity : AppCompatActivity() {
     // region 画笔通道开关、保存、识别
 
     private fun refreshPenEnabled() {
-        penInput?.setEnabled(resumed && windowFocused && overlayDepth == 0 && selection.isEmpty)
+        penInput?.setEnabled(resumed && windowFocused && overlayDepth == 0 && selection.isEmpty && !repaintPending)
     }
 
     /**
@@ -2335,10 +2354,40 @@ class EditorActivity : AppCompatActivity() {
         refreshPenEnabled()
     }
 
-    /** 暂停直绘执行 [block] 后恢复：墨水屏需要这样才能刷出应用自己重绘的内容。 */
+    /** 暂停直绘、等待应用重绘的内容真正刷到屏幕上；期间直绘保持关闭。 */
+    private var repaintPending = false
+
+    private fun doResumeAfterRepaint() {
+        if (!repaintPending) return
+        repaintPending = false
+        handler.removeCallbacks(resumeAfterRepaintFallback)
+        refreshPenEnabled()
+    }
+
+    private val resumeAfterRepaint: Runnable = Runnable { doResumeAfterRepaint() }
+
+    /** 兜底：画布这一帧没画（不可见、尺寸为 0 等）时，也不能让笔一直写不了。 */
+    private val resumeAfterRepaintFallback: Runnable = Runnable { doResumeAfterRepaint() }
+
+    /**
+     * 暂停直绘执行 [block]，等画布下一帧画完、墨水屏刷新后再恢复：墨水屏需要这样才能刷出应用自己重绘的内容。
+     * 以前是 block 之后立刻恢复，而 invalidate() 要到下一帧才真正绘制，那时直绘已经开了，
+     * 文石不刷新普通视图，于是「擦完底纹过一会才出来」「点了工具过一会才变」。
+     * 嵌套或连续调用会合并成一次暂停。
+     */
     private inline fun withPenPaused(block: () -> Unit) {
         penInput?.setEnabled(false)
+        // 先标记再执行：block 里嵌套的 refreshPenEnabled()（如退出选区）不会中途把直绘打开
+        val schedule = penInput != null && !repaintPending
+        if (schedule) repaintPending = true
         block()
+        if (schedule) {
+            inkCanvas.doAfterNextDraw {
+                EinkRefresher.refreshFast(inkCanvas)
+                handler.postDelayed(resumeAfterRepaint, EPD_SETTLE_MS)
+            }
+            handler.postDelayed(resumeAfterRepaintFallback, REPAINT_TIMEOUT_MS)
+        }
         refreshPenEnabled()
     }
 
@@ -2527,6 +2576,10 @@ class EditorActivity : AppCompatActivity() {
         /** 套索、橡皮路径提示的颜色。 */
         private const val GUIDE_COLOR = "#4B5563"
         private const val ERASER_PREVIEW_MS = 1500L
+        /** 画布画完后再等这么久恢复直绘，让渲染线程交付这一帧、墨水屏开始刷新。 */
+        private const val EPD_SETTLE_MS = 40L
+        /** 等不到画布重绘时最多暂停直绘这么久。 */
+        private const val REPAINT_TIMEOUT_MS = 300L
 
         private const val MENU_INSERT = 1
         private const val MENU_DUPLICATE = 2

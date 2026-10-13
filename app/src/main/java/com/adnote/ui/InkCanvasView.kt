@@ -258,6 +258,17 @@ class InkCanvasView @JvmOverloads constructor(
         applyViewport(viewport.reset(), notify = true)
     }
 
+    private val afterDrawActions = ArrayList<Runnable>()
+
+    /**
+     * 下一次 [onDraw] 完成后执行 [action]（并安排一次重绘，保证一定会画）。
+     * invalidate() 只是登记，真正绘制要等下一帧；墨水屏上要等画完再恢复直绘，否则新内容刷不出来。
+     */
+    fun doAfterNextDraw(action: Runnable) {
+        afterDrawActions.add(action)
+        invalidate()
+    }
+
     /** 视图坐标 → 页面坐标。 */
     fun toPage(points: List<InkPoint>): List<InkPoint> {
         val vp = viewport
@@ -415,6 +426,13 @@ class InkCanvasView @JvmOverloads constructor(
         if (hoverRadius > 0f) canvas.drawCircle(hoverX, hoverY, hoverRadius, overlayStroke)
 
         canvas.restore()
+
+        if (afterDrawActions.isNotEmpty()) {
+            val actions = afterDrawActions.toList()
+            afterDrawActions.clear()
+            // post：等整棵视图树（含工具栏）这一帧都画完再执行
+            actions.forEach { post(it) }
+        }
     }
 
     private fun setDashed(p: Paint, scale: Float) {

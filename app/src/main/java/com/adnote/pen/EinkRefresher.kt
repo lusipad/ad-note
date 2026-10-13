@@ -52,6 +52,15 @@ object EinkRefresher {
         runCatching { EpdController.refreshScreen(view, mode) }
     }
 
+    /**
+     * 局部/快速刷新：在内容修改（擦除、撤销、加笔）、工具切换后，通知墨水屏控制器快速刷新视图。
+     * 优先使用 DU / GU / REGAL 模式，低延迟且无黑白闪烁。
+     */
+    fun refreshFast(view: View) {
+        val mode = modeNamed("DU") ?: modeNamed("GU") ?: modeNamed("REGAL") ?: return
+        runCatching { EpdController.refreshScreen(view, mode) }
+    }
+
     /** 按名称取刷新模式；不同 SDK 版本提供的模式不同，找不到返回 null。 */
     private fun modeNamed(name: String): UpdateMode? =
         runCatching { UpdateMode::class.java.enumConstants?.firstOrNull { it.toString() == name } }.getOrNull()
