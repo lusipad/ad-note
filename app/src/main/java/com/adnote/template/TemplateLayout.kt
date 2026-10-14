@@ -58,9 +58,9 @@ object TemplateLayout {
 
             PageTemplate.RULED, PageTemplate.RULED_WIDE, PageTemplate.RULED_NARROW -> {
                 val spacing = when (template) {
-                    PageTemplate.RULED_WIDE -> 74f * d
-                    PageTemplate.RULED_NARROW -> 38f * d
-                    else -> 54f * d
+                    PageTemplate.RULED_WIDE -> 148f * d
+                    PageTemplate.RULED_NARROW -> 76f * d
+                    else -> 108f * d
                 }
                 val top = 120f * d
                 val bottom = 60f * d
@@ -76,9 +76,9 @@ object TemplateLayout {
 
             PageTemplate.GRID, PageTemplate.GRID_LARGE, PageTemplate.GRID_SMALL -> {
                 val size = when (template) {
-                    PageTemplate.GRID_LARGE -> 64f * d
-                    PageTemplate.GRID_SMALL -> 28f * d
-                    else -> 44f * d
+                    PageTemplate.GRID_LARGE -> 128f * d
+                    PageTemplate.GRID_SMALL -> 56f * d
+                    else -> 88f * d
                 }
                 grid(out, w, h, 40f * d, size) { k ->
                     if (k % 5 == 0) c.main to 1.2f * d else c.accent to 1f * d
@@ -93,8 +93,8 @@ object TemplateLayout {
             }
 
             PageTemplate.DOT, PageTemplate.DOT_DENSE -> {
-                val spacing = if (template == PageTemplate.DOT_DENSE) 28f * d else 44f * d
-                val r = if (template == PageTemplate.DOT_DENSE) 1.2f * d else 1.5f * d
+                val spacing = if (template == PageTemplate.DOT_DENSE) 56f * d else 88f * d
+                val r = if (template == PageTemplate.DOT_DENSE) 1.5f * d else 2.0f * d
                 val margin = 40f * d
                 var y = margin
                 while (y <= h - margin) {
@@ -212,7 +212,7 @@ object TemplateLayout {
                 out += TemplateLine(margin, header, w - margin, header, c.main, 2f * d)
                 out += TemplateLine(margin, summaryY, w - margin, summaryY, c.main, 2f * d)
                 out += TemplateLine(cueW, header, cueW, summaryY, c.main, 2f * d)
-                val spacing = 50f * d
+                val spacing = 100f * d
                 var y = header + spacing
                 while (y < summaryY - 10f) {
                     out += TemplateLine(cueW + 10f * d, y, w - margin, y, c.accent, 1f * d)
