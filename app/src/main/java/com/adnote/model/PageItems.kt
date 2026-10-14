@@ -43,6 +43,26 @@ data class ImageItem(
     val layer: Int = 0,
 )
 
+/**
+ * 记忆遮挡胶带（主动回忆 / 填空自测工具）：
+ * 覆盖在重点文字、公式或定义上，点按即可切换 [revealed]（半透明透视 vs 实心遮挡），
+ * 不参与手写文字识别，是商业级学习笔记软件的核心复习利器。
+ */
+@Serializable
+data class TapeMask(
+    val id: String = newId(),
+    val x: Float,
+    val y: Float,
+    val width: Float,
+    val height: Float = 36f,
+    val color: String = "#FACC15",
+    val revealed: Boolean = false,
+    val layer: Int = 0,
+) {
+    fun contains(px: Float, py: Float, slop: Float = 8f): Boolean =
+        px in (x - slop)..(x + width + slop) && py in (y - slop)..(y + height + slop)
+}
+
 /** 一段录音。[path] 相对笔记目录；[pageId] 为开始录音时所在页。 */
 @Serializable
 data class Recording(
@@ -53,12 +73,13 @@ data class Recording(
     val pageId: String? = null,
 )
 
-/** 某个图层上的全部内容，按绘制顺序：图片 → 笔画 → 文字。 */
+/** 某个图层上的全部内容，按绘制顺序：图片 → 笔画 → 文字 → 记忆胶带。 */
 data class LayerContent(
     val layer: Layer,
     val strokes: List<Stroke>,
     val texts: List<TextBox>,
     val images: List<ImageItem>,
+    val tapes: List<TapeMask> = emptyList(),
 )
 
 /**
@@ -76,6 +97,7 @@ fun Page.layerContents(includeHidden: Boolean = false): List<LayerContent> {
             strokes = strokes.filter { owner(it.layer) == l.id },
             texts = texts.filter { owner(it.layer) == l.id },
             images = images.filter { owner(it.layer) == l.id },
+            tapes = tapes.filter { owner(it.layer) == l.id },
         )
     }
 }

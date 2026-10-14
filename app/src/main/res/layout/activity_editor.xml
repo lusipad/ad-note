@@ -39,7 +39,7 @@
             android:singleLine="true"
             android:ellipsize="end" />
 
-        <!-- 翻页胶囊：点页码打开页面概览 -->
+        <!-- 翻页胶囊：点页码切换底部胶片抽屉，长按打开全屏网格概览 -->
         <LinearLayout
             android:layout_width="wrap_content"
             android:layout_height="36dp"
@@ -82,8 +82,8 @@
         </LinearLayout>
 
         <ImageButton
-                android:padding="7dp"
-                android:scaleType="fitCenter"
+            android:padding="7dp"
+            android:scaleType="fitCenter"
             android:id="@+id/btnAddPage"
             android:layout_width="36dp"
             android:layout_height="36dp"
@@ -93,19 +93,30 @@
             android:layout_marginEnd="6dp" />
 
         <ImageButton
-                android:padding="7dp"
-                android:scaleType="fitCenter"
+            android:padding="7dp"
+            android:scaleType="fitCenter"
             android:id="@+id/btnPages"
             android:layout_width="36dp"
             android:layout_height="36dp"
             android:background="@drawable/bg_button_secondary"
             android:src="@drawable/ic_pages"
-            android:contentDescription="页面概览"
+            android:contentDescription="页面概览与大纲"
             android:layout_marginEnd="6dp" />
 
         <ImageButton
-                android:padding="7dp"
-                android:scaleType="fitCenter"
+            android:padding="7dp"
+            android:scaleType="fitCenter"
+            android:id="@+id/btnSplitObsidian"
+            android:layout_width="36dp"
+            android:layout_height="36dp"
+            android:background="@drawable/bg_button_secondary"
+            android:src="@drawable/ic_split"
+            android:contentDescription="Obsidian 双栏同屏对照"
+            android:layout_marginEnd="6dp" />
+
+        <ImageButton
+            android:padding="7dp"
+            android:scaleType="fitCenter"
             android:id="@+id/btnRecognize"
             android:layout_width="36dp"
             android:layout_height="36dp"
@@ -115,8 +126,8 @@
             android:layout_marginEnd="6dp" />
 
         <ImageButton
-                android:padding="7dp"
-                android:scaleType="fitCenter"
+            android:padding="7dp"
+            android:scaleType="fitCenter"
             android:id="@+id/btnRefresh"
             android:layout_width="36dp"
             android:layout_height="36dp"
@@ -155,7 +166,7 @@
             android:layout_height="36dp"
             android:background="@drawable/bg_button_secondary"
             android:src="@drawable/ic_more_vert"
-            android:contentDescription="更多" />
+            android:contentDescription="更多与快捷命令" />
     </LinearLayout>
 
     <View
@@ -164,7 +175,7 @@
         android:layout_height="1dp"
         android:background="@color/border_hairline" />
 
-    <!-- 编辑器主体：包含左侧停靠、中央画布区域与右侧停靠 -->
+    <!-- 编辑器主体：包含左侧停靠、中央画布区域、Obsidian 同屏分栏与右侧停靠 -->
     <LinearLayout
         android:id="@+id/layoutEditorBody"
         android:layout_width="match_parent"
@@ -188,7 +199,7 @@
             android:background="@color/border_hairline"
             android:visibility="gone" />
 
-        <!-- 中央工作区：顶部停靠栏 + 画布 -->
+        <!-- 中央工作区：顶部停靠栏 + 画布 + 底部胶片抽屉 -->
         <LinearLayout
             android:id="@+id/layoutCenter"
             android:layout_width="0dp"
@@ -266,7 +277,7 @@
                         android:src="@drawable/ic_shape"
                         android:padding="7dp"
                         android:scaleType="fitCenter"
-                        android:contentDescription="形状（画完自动规整）"
+                        android:contentDescription="形状（支持直线、箭头、矩形、圆、多边形）"
                         android:layout_marginEnd="6dp" />
 
                     <ImageButton
@@ -277,7 +288,29 @@
                         android:src="@drawable/ic_text"
                         android:padding="7dp"
                         android:scaleType="fitCenter"
-                        android:contentDescription="文字框" />
+                        android:contentDescription="文字框"
+                        android:layout_marginEnd="6dp" />
+
+                    <ImageButton
+                        android:id="@+id/btnToolTape"
+                        android:layout_width="40dp"
+                        android:layout_height="36dp"
+                        android:background="@drawable/bg_button_secondary"
+                        android:src="@drawable/ic_tape"
+                        android:padding="7dp"
+                        android:scaleType="fitCenter"
+                        android:contentDescription="记忆遮挡胶带（涂抹遮挡重点，点按揭开背诵）"
+                        android:layout_marginEnd="6dp" />
+
+                    <ImageButton
+                        android:id="@+id/btnToolLaser"
+                        android:layout_width="40dp"
+                        android:layout_height="36dp"
+                        android:background="@drawable/bg_button_secondary"
+                        android:src="@drawable/ic_laser"
+                        android:padding="7dp"
+                        android:scaleType="fitCenter"
+                        android:contentDescription="激光教鞭（自动消隐演示轨迹）" />
 
                     <View
                         android:id="@+id/dividerTool1"
@@ -404,7 +437,7 @@
                         android:layout_marginHorizontal="8dp"
                         android:background="@color/border_hairline" />
 
-                    <!-- 当前工具的快捷色板（橡皮/套索时隐藏） -->
+                    <!-- 当前工具的快捷色板 -->
                     <LinearLayout
                         android:id="@+id/layoutQuickColors"
                         android:layout_width="wrap_content"
@@ -435,7 +468,7 @@
                         android:src="@drawable/ic_ruler"
                         android:padding="7dp"
                         android:scaleType="fitCenter"
-                        android:contentDescription="直尺"
+                        android:contentDescription="直尺与量角器（支持 15° 磁吸）"
                         android:layout_marginEnd="6dp" />
 
                     <ImageButton
@@ -468,7 +501,7 @@
                         android:src="@drawable/ic_mic"
                         android:padding="7dp"
                         android:scaleType="fitCenter"
-                        android:contentDescription="录音"
+                        android:contentDescription="音字同步录音"
                         android:layout_marginEnd="6dp" />
 
                     <Button
@@ -493,175 +526,332 @@
                 android:layout_height="1dp"
                 android:background="@color/border_hairline" />
 
-    <!-- 画布手写主区域 -->
-    <FrameLayout
-        android:layout_width="match_parent"
-        android:layout_height="0dp"
-        android:layout_weight="1">
+            <!-- 画布手写主区域 -->
+            <FrameLayout
+                android:layout_width="match_parent"
+                android:layout_height="0dp"
+                android:layout_weight="1">
 
-        <com.adnote.ui.InkCanvasView
-            android:id="@+id/inkCanvas"
-            android:layout_width="match_parent"
-            android:layout_height="match_parent" />
+                <com.adnote.ui.InkCanvasView
+                    android:id="@+id/inkCanvas"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent" />
 
-        <!-- 悬浮退出全屏/禅模式按钮 -->
-        <LinearLayout
-            android:id="@+id/btnExitZen"
-            android:layout_width="wrap_content"
-            android:layout_height="36dp"
-            android:layout_gravity="top|start"
-            android:layout_margin="12dp"
-            android:background="@drawable/bg_selection_bar"
-            android:paddingHorizontal="12dp"
-            android:gravity="center"
-            android:orientation="horizontal"
-            android:visibility="gone"
-            android:clickable="true"
-            android:focusable="true">
+                <!-- 悬浮退出全屏/禅模式按钮 -->
+                <LinearLayout
+                    android:id="@+id/btnExitZen"
+                    android:layout_width="wrap_content"
+                    android:layout_height="36dp"
+                    android:layout_gravity="top|start"
+                    android:layout_margin="12dp"
+                    android:background="@drawable/bg_selection_bar"
+                    android:paddingHorizontal="12dp"
+                    android:gravity="center"
+                    android:orientation="horizontal"
+                    android:visibility="gone"
+                    android:clickable="true"
+                    android:focusable="true">
 
-            <ImageView
-                android:layout_width="16dp"
-                android:layout_height="16dp"
-                android:src="@drawable/ic_fullscreen_exit" />
+                    <ImageView
+                        android:layout_width="16dp"
+                        android:layout_height="16dp"
+                        android:src="@drawable/ic_fullscreen_exit" />
 
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginStart="6dp"
-                android:text="退出禅模式"
-                android:textSize="13sp"
-                android:textStyle="bold"
-                android:textColor="@color/text_primary" />
-        </LinearLayout>
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="6dp"
+                        android:text="退出禅模式"
+                        android:textSize="13sp"
+                        android:textStyle="bold"
+                        android:textColor="@color/text_primary" />
+                </LinearLayout>
 
-        <!-- 套索选区操作条 -->
-        <HorizontalScrollView
-            android:id="@+id/layoutSelectionBar"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_gravity="top|center_horizontal"
-            android:layout_marginTop="12dp"
-            android:layout_marginHorizontal="12dp"
-            android:scrollbars="none"
-            android:background="@drawable/bg_selection_bar"
-            android:visibility="gone">
-
-            <LinearLayout
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:orientation="horizontal"
-                android:gravity="center_vertical"
-                android:padding="6dp">
-
-                <TextView
-                    android:id="@+id/tvSelectionInfo"
+                <!-- 套索选区操作条 -->
+                <HorizontalScrollView
+                    android:id="@+id/layoutSelectionBar"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
+                    android:layout_gravity="top|center_horizontal"
+                    android:layout_marginTop="12dp"
+                    android:layout_marginHorizontal="12dp"
+                    android:scrollbars="none"
+                    android:background="@drawable/bg_selection_bar"
+                    android:visibility="gone">
+
+                    <LinearLayout
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical"
+                        android:padding="6dp">
+
+                        <TextView
+                            android:id="@+id/tvSelectionInfo"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:textSize="12sp"
+                            android:textColor="@color/text_secondary"
+                            android:paddingHorizontal="8dp" />
+
+                        <Button android:id="@+id/btnSelCut" style="@style/SelectionAction" android:text="剪切" />
+                        <Button android:id="@+id/btnSelCopy" style="@style/SelectionAction" android:text="拷贝" />
+                        <Button android:id="@+id/btnSelDuplicate" style="@style/SelectionAction" android:text="复制一份" />
+                        <Button android:id="@+id/btnSelDelete" style="@style/SelectionAction" android:text="删除" />
+                        <Button android:id="@+id/btnSelColor" style="@style/SelectionAction" android:text="改色" />
+                        <Button android:id="@+id/btnSelToText" style="@style/SelectionAction" android:text="转文字" />
+                        <Button android:id="@+id/btnSelLayer" style="@style/SelectionAction" android:text="移到图层" />
+                        <Button android:id="@+id/btnSelDone" style="@style/SelectionAction" android:text="完成" />
+                    </LinearLayout>
+                </HorizontalScrollView>
+
+                <!-- 录音中 / 音字同步回放提示条 -->
+                <LinearLayout
+                    android:id="@+id/layoutRecordingBar"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_gravity="top|end"
+                    android:layout_marginTop="12dp"
+                    android:layout_marginEnd="12dp"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:padding="6dp"
+                    android:background="@drawable/bg_selection_bar"
+                    android:visibility="gone">
+
+                    <TextView
+                        android:id="@+id/tvRecordingTime"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="● 录音中 0:00"
+                        android:textSize="13sp"
+                        android:textStyle="bold"
+                        android:textColor="#DC2626"
+                        android:paddingHorizontal="8dp" />
+
+                    <Button android:id="@+id/btnStopRecording" style="@style/SelectionAction" android:text="停止" />
+                </LinearLayout>
+
+                <!-- 缩放比例，点按复位 -->
+                <TextView
+                    android:id="@+id/tvZoom"
+                    android:layout_width="wrap_content"
+                    android:layout_height="32dp"
+                    android:layout_gravity="bottom|start"
+                    android:layout_margin="12dp"
+                    android:gravity="center"
+                    android:paddingHorizontal="12dp"
                     android:textSize="12sp"
-                    android:textColor="@color/text_secondary"
-                    android:paddingHorizontal="8dp" />
+                    android:textColor="@color/text_primary"
+                    android:background="@drawable/bg_selection_bar"
+                    android:visibility="gone" />
 
-                <Button android:id="@+id/btnSelCut" style="@style/SelectionAction" android:text="剪切" />
-                <Button android:id="@+id/btnSelCopy" style="@style/SelectionAction" android:text="拷贝" />
-                <Button android:id="@+id/btnSelDuplicate" style="@style/SelectionAction" android:text="复制一份" />
-                <Button android:id="@+id/btnSelDelete" style="@style/SelectionAction" android:text="删除" />
-                <Button android:id="@+id/btnSelColor" style="@style/SelectionAction" android:text="改色" />
-                <Button android:id="@+id/btnSelToText" style="@style/SelectionAction" android:text="转文字" />
-                <Button android:id="@+id/btnSelLayer" style="@style/SelectionAction" android:text="移到图层" />
-                <Button android:id="@+id/btnSelDone" style="@style/SelectionAction" android:text="完成" />
-            </LinearLayout>
-        </HorizontalScrollView>
+                <!-- 底部浮动识别结果面板 -->
+                <LinearLayout
+                    android:id="@+id/layoutRecognized"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_gravity="bottom"
+                    android:orientation="vertical"
+                    android:background="@drawable/bg_drawer_recognized"
+                    android:visibility="gone"
+                    android:layout_marginHorizontal="16dp"
+                    android:layout_marginBottom="16dp">
 
-        <!-- 录音中提示条 -->
-        <LinearLayout
-            android:id="@+id/layoutRecordingBar"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_gravity="top|end"
-            android:layout_marginTop="12dp"
-            android:layout_marginEnd="12dp"
-            android:orientation="horizontal"
-            android:gravity="center_vertical"
-            android:padding="6dp"
-            android:background="@drawable/bg_selection_bar"
-            android:visibility="gone">
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical"
+                        android:layout_marginBottom="6dp">
 
-            <TextView
-                android:id="@+id/tvRecordingTime"
-                android:layout_width="wrap_content"
+                        <TextView
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="✨ 识别结果 (已同步至 Markdown)"
+                            android:textSize="13sp"
+                            android:textStyle="bold"
+                            android:textColor="@color/text_primary" />
+
+                        <TextView
+                            android:id="@+id/btnCloseRecognized"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="关闭"
+                            android:textSize="12sp"
+                            android:textColor="@color/text_secondary"
+                            android:padding="4dp" />
+                    </LinearLayout>
+
+                    <TextView
+                        android:id="@+id/tvRecognizedResult"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:textColor="@color/text_primary"
+                        android:textSize="14sp"
+                        android:lineSpacingExtra="3dp"
+                        android:maxLines="5"
+                        android:ellipsize="end" />
+                </LinearLayout>
+            </FrameLayout>
+
+            <!-- 底部实时页码胶片快速导航栏 (Filmstrip Drawer) -->
+            <LinearLayout
+                android:id="@+id/layoutFilmstripBar"
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="● 录音中 0:00"
-                android:textSize="13sp"
-                android:textStyle="bold"
-                android:textColor="#DC2626"
-                android:paddingHorizontal="8dp" />
+                android:orientation="vertical"
+                android:background="@color/bg_surface"
+                android:visibility="gone">
 
-            <Button android:id="@+id/btnStopRecording" style="@style/SelectionAction" android:text="停止" />
+                <View
+                    android:layout_width="match_parent"
+                    android:layout_height="1dp"
+                    android:background="@color/border_hairline" />
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:paddingHorizontal="12dp"
+                    android:paddingVertical="6dp">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="📑 页面胶片导航"
+                        android:textSize="11sp"
+                        android:textStyle="bold"
+                        android:textColor="@color/text_secondary"
+                        android:layout_marginEnd="10dp" />
+
+                    <HorizontalScrollView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:scrollbars="none">
+
+                        <LinearLayout
+                            android:id="@+id/layoutFilmstripItems"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:orientation="horizontal"
+                            android:gravity="center_vertical" />
+                    </HorizontalScrollView>
+
+                    <Button
+                        android:id="@+id/btnCloseFilmstrip"
+                        style="@style/SelectionAction"
+                        android:text="收起" />
+                </LinearLayout>
+            </LinearLayout>
         </LinearLayout>
 
-        <!-- 缩放比例，点按复位 -->
-        <TextView
-            android:id="@+id/tvZoom"
-            android:layout_width="wrap_content"
-            android:layout_height="32dp"
-            android:layout_gravity="bottom|start"
-            android:layout_margin="12dp"
-            android:gravity="center"
-            android:paddingHorizontal="12dp"
-            android:textSize="12sp"
-            android:textColor="@color/text_primary"
-            android:background="@drawable/bg_selection_bar"
-            android:visibility="gone" />
-
-        <!-- 底部浮动识别结果面板 -->
+        <!-- Obsidian 同屏双开对照侧边栏 (Split View) -->
         <LinearLayout
-            android:id="@+id/layoutRecognized"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_gravity="bottom"
+            android:id="@+id/layoutSplitObsidian"
+            android:layout_width="320dp"
+            android:layout_height="match_parent"
             android:orientation="vertical"
-            android:background="@drawable/bg_drawer_recognized"
-            android:visibility="gone"
-            android:layout_marginHorizontal="16dp"
-            android:layout_marginBottom="16dp">
+            android:background="@color/bg_surface_subtle"
+            android:visibility="gone">
+
+            <View
+                android:layout_width="1dp"
+                android:layout_height="match_parent"
+                android:background="@color/border_hairline"
+                android:visibility="gone" />
 
             <LinearLayout
                 android:layout_width="match_parent"
-                android:layout_height="wrap_content"
+                android:layout_height="44dp"
                 android:orientation="horizontal"
                 android:gravity="center_vertical"
-                android:layout_marginBottom="6dp">
+                android:paddingHorizontal="12dp"
+                android:background="@color/bg_surface">
 
                 <TextView
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
                     android:layout_weight="1"
-                    android:text="✨ 识别结果 (已同步至 Markdown)"
+                    android:text="🔗 Obsidian 实时双栏对照"
                     android:textSize="13sp"
                     android:textStyle="bold"
                     android:textColor="@color/text_primary" />
 
-                <TextView
-                    android:id="@+id/btnCloseRecognized"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="关闭"
-                    android:textSize="12sp"
-                    android:textColor="@color/text_secondary"
-                    android:padding="4dp" />
+                <Button
+                    android:id="@+id/btnSaveSplitObsidian"
+                    style="@style/SelectionAction"
+                    android:text="保存" />
+
+                <Button
+                    android:id="@+id/btnCloseSplitObsidian"
+                    style="@style/SelectionAction"
+                    android:text="关闭" />
             </LinearLayout>
 
-            <TextView
-                android:id="@+id/tvRecognizedResult"
+            <View
                 android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:textColor="@color/text_primary"
-                android:textSize="14sp"
-                android:lineSpacingExtra="3dp"
-                android:maxLines="5"
-                android:ellipsize="end" />
-        </LinearLayout>
-    </FrameLayout>
+                android:layout_height="1dp"
+                android:background="@color/border_hairline" />
+
+            <ScrollView
+                android:layout_width="match_parent"
+                android:layout_height="0dp"
+                android:layout_weight="1"
+                android:padding="12dp">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="用户自由编辑区（双向合并保护，永不覆盖）"
+                        android:textSize="11sp"
+                        android:textStyle="bold"
+                        android:textColor="@color/text_secondary"
+                        android:layout_marginBottom="6dp" />
+
+                    <EditText
+                        android:id="@+id/etSplitObsidianMd"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:minLines="6"
+                        android:gravity="top|start"
+                        android:background="@drawable/bg_edit_text"
+                        android:padding="10dp"
+                        android:hint="在此输入 Markdown 笔记、大纲或 [[双链]]，将与手写 SVG 一起同步至 Obsidian…"
+                        android:textSize="13sp"
+                        android:textColor="@color/text_primary"
+                        android:lineSpacingExtra="3dp"
+                        android:layout_marginBottom="14dp" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="本页手写 OCR 实时索引预览"
+                        android:textSize="11sp"
+                        android:textStyle="bold"
+                        android:textColor="@color/text_secondary"
+                        android:layout_marginBottom="6dp" />
+
+                    <TextView
+                        android:id="@+id/tvSplitOcrPreview"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:background="@drawable/bg_card_note"
+                        android:padding="10dp"
+                        android:text="（暂无识别文本，点击顶栏「识别」或翻页自动提取）"
+                        android:textSize="12sp"
+                        android:textColor="@color/text_secondary"
+                        android:lineSpacingExtra="3dp" />
+                </LinearLayout>
+            </ScrollView>
         </LinearLayout>
 
         <View

@@ -3,6 +3,7 @@ package com.adnote.ui
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.DashPathEffect
 import android.graphics.Paint
 import android.graphics.Rect
 import android.graphics.RectF
@@ -12,11 +13,12 @@ import com.adnote.ink.TextLayout
 import com.adnote.model.ImageItem
 import com.adnote.model.Page
 import com.adnote.model.PaperPresets
+import com.adnote.model.TapeMask
 import com.adnote.model.TextBox
 import com.adnote.model.layerContents
 
 /**
- * 在页面坐标系下绘制一整页：纸色 → PDF 底图或自定义背景 → 底纹 → 各图层（图片、笔画、文字）。
+ * 在页面坐标系下绘制一整页：纸色 → PDF 底图或自定义背景 → 底纹 → 各图层（图片、笔画、文字、记忆遮挡胶带）。
  * 画布、缩略图、PDF/PNG 导出共用，保证处处一致。每个线程使用自己的实例。
  */
 class PageRenderer(private val assets: BitmapAssets?) {
@@ -24,6 +26,12 @@ class PageRenderer(private val assets: BitmapAssets?) {
     private val strokes = StrokePainter()
     private val bitmapPaint = Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG)
     private val textPaint = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val tapeFillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
+    private val tapeBorderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        strokeWidth = 2f
+        pathEffect = DashPathEffect(floatArrayOf(8f, 6f), 0f)
+    }
     private val srcRect = Rect()
     private val dstRect = RectF()
 
@@ -31,6 +39,7 @@ class PageRenderer(private val assets: BitmapAssets?) {
      * @param pdfBackground PDF 笔记当前页的渲染图（铺满页面）
      * @param hidden 不绘制的选区内容（拖动选区时单独绘制在上层）
      * @param minLine 底纹最细线宽（缩略图用）
+     * @param playbackCutoffMs 音字同步回放时的时间戳截止点（晚于该时间的笔画半透明淡化显示）
      */
     fun drawPage(
         canvas: Canvas,
@@ -38,9 +47,10 @@ class PageRenderer(private val assets: BitmapAssets?) {
         pdfBackground: Bitmap? = null,
         hidden: Selection = Selection.EMPTY,
         minLine: Float = 0f,
+        playbackCutoffMs: Long? = null,
     ) {
         drawBackground(canvas, page, pdfBackground, minLine)
-        drawContent(canvas, page, hidden)
+        drawContent(canvas, page, hidden, playbackCutoffMs)
     }
 
     fun drawBackground(canvas: Canvas, page: Page, pdfBackground: Bitmap? = null, minLine: Float = 0f) {
@@ -68,17 +78,62 @@ class PageRenderer(private val assets: BitmapAssets?) {
         PageTemplateRenderer.renderLines(canvas, page.template, page.backgroundColor, page.width, page.height, minLine)
     }
 
-    fun drawContent(canvas: Canvas, page: Page, hidden: Selection = Selection.EMPTY) {
+    fun drawContent(
+        canvas: Canvas,
+        page: Page,
+        hidden: Selection = Selection.EMPTY,
+        playbackCutoffMs: Long? = null,
+    ) {
         for (c in page.layerContents()) {
             c.images.forEach { if (it.id !in hidden.images) drawImage(canvas, it) }
             val (highlighters, normalStrokes) = c.strokes.partition { it.pen == com.adnote.model.PenType.HIGHLIGHTER }
-            highlighters.forEach { if (it.id !in hidden.strokes) strokes.draw(canvas, it) }
-            normalStrokes.forEach { if (it.id !in hidden.strokes) strokes.draw(canvas, it) }
+            highlighters.forEach { if (it.id !in hidden.strokes) drawStrokeWithCutoff(canvas, it, playbackCutoffMs) }
+            normalStrokes.forEach { if (it.id !in hidden.strokes) drawStrokeWithCutoff(canvas, it, playbackCutoffMs) }
             c.texts.forEach { if (it.id !in hidden.texts) drawText(canvas, it, page.width) }
+            c.tapes.forEach { if (it.id !in hidden.tapes) drawTape(canvas, it) }
+        }
+    }
+
+    private fun drawStrokeWithCutoff(canvas: Canvas, stroke: com.adnote.model.Stroke, cutoffMs: Long?) {
+        if (cutoffMs == null) {
+            strokes.draw(canvas, stroke)
+            return
+        }
+        val t0 = stroke.points.firstOrNull()?.t ?: 0L
+        if (t0 in 1..cutoffMs) {
+            strokes.draw(canvas, stroke)
+        } else {
+            // 录音回放进度尚未到达该笔画：以浅灰半透明预览显示
+            canvas.saveLayerAlpha(null, 55)
+            strokes.draw(canvas, stroke)
+            canvas.restore()
         }
     }
 
     fun drawStroke(canvas: Canvas, stroke: com.adnote.model.Stroke) = strokes.draw(canvas, stroke)
+
+    fun drawTape(canvas: Canvas, tape: TapeMask) {
+        val baseColor = StrokePainter.parseColor(tape.color)
+        dstRect.set(tape.x, tape.y, tape.x + tape.width, tape.y + tape.height)
+        val radius = 8f
+        if (tape.revealed) {
+            // 已揭开状态：仅显示极浅底色与虚线边框，底下文字清晰可见
+            tapeFillPaint.color = baseColor
+            tapeFillPaint.alpha = 38
+            canvas.drawRoundRect(dstRect, radius, radius, tapeFillPaint)
+            tapeBorderPaint.color = baseColor
+            tapeBorderPaint.alpha = 180
+            canvas.drawRoundRect(dstRect, radius, radius, tapeBorderPaint)
+        } else {
+            // 遮挡背诵状态：不透明实心遮挡条 + 精致纹理标识
+            tapeFillPaint.color = baseColor
+            tapeFillPaint.alpha = 248
+            canvas.drawRoundRect(dstRect, radius, radius, tapeFillPaint)
+            tapeBorderPaint.color = Color.parseColor("#374151")
+            tapeBorderPaint.alpha = 110
+            canvas.drawRoundRect(dstRect, radius, radius, tapeBorderPaint)
+        }
+    }
 
     fun drawImage(canvas: Canvas, img: ImageItem) {
         val bmp = assets?.get(img.path)

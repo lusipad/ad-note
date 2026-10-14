@@ -57,6 +57,8 @@ import com.adnote.model.PenType
 import com.adnote.model.Recording
 import com.adnote.model.Stroke
 import com.adnote.model.StylusButtonAction
+import com.adnote.model.TapeMask
+import com.adnote.model.PageTemplate
 import com.adnote.model.TextBox
 import com.adnote.model.Tool
 import com.adnote.model.ToolState
@@ -128,6 +130,12 @@ class EditorActivity : AppCompatActivity() {
     private lateinit var btnZen: ImageButton
     private lateinit var btnDockPosition: ImageButton
     private lateinit var btnExitZen: View
+    private lateinit var btnSplitObsidian: ImageButton
+    private lateinit var layoutSplitObsidian: View
+    private lateinit var etSplitObsidianMd: EditText
+    private lateinit var tvSplitOcrPreview: TextView
+    private lateinit var layoutFilmstripBar: View
+    private lateinit var layoutFilmstripItems: LinearLayout
 
     private var isZenMode: Boolean = false
 
@@ -173,8 +181,9 @@ class EditorActivity : AppCompatActivity() {
         override fun run() {
             val active = RecordingSession.active ?: return
             val other = if (active.noteId != note.id) "（「${active.noteTitle}」）" else ""
+            // 墨水屏防频闪：墨水屏上每 15 秒低频更新一次录音时长，避免书写时右上角每秒重绘闪动
             tvRecordingTime.text = "● 录音中$other ${formatDuration(RecordingSession.elapsedMs)}"
-            handler.postDelayed(this, 1000)
+            handler.postDelayed(this, if (isEink) 15_000L else 1_000L)
         }
     }
 
@@ -270,7 +279,15 @@ class EditorActivity : AppCompatActivity() {
             Tool.LASSO to findViewById(R.id.btnToolLasso),
             Tool.SHAPE to findViewById(R.id.btnToolShape),
             Tool.TEXT to findViewById(R.id.btnToolText),
+            Tool.TAPE to findViewById(R.id.btnToolTape),
+            Tool.LASER to findViewById(R.id.btnToolLaser),
         )
+        btnSplitObsidian = findViewById(R.id.btnSplitObsidian)
+        layoutSplitObsidian = findViewById(R.id.layoutSplitObsidian)
+        etSplitObsidianMd = findViewById(R.id.etSplitObsidianMd)
+        tvSplitOcrPreview = findViewById(R.id.tvSplitOcrPreview)
+        layoutFilmstripBar = findViewById(R.id.layoutFilmstripBar)
+        layoutFilmstripItems = findViewById(R.id.layoutFilmstripItems)
         btnRuler = findViewById(R.id.btnRuler)
         btnInsertImage = findViewById(R.id.btnInsertImage)
         btnRecord = findViewById(R.id.btnRecord)
@@ -325,7 +342,12 @@ class EditorActivity : AppCompatActivity() {
 
         btnPrevPage.setOnClickListener { prevPage() }
         btnNextPage.setOnClickListener { nextPage(appendAtEnd = true) }
-        tvPageIndicator.setOnClickListener { showPageOverview() }
+        tvPageIndicator.setOnClickListener { toggleFilmstripBar() }
+        tvPageIndicator.setOnLongClickListener { showPageOverview(); true }
+        btnSplitObsidian.setOnClickListener { toggleSplitObsidian() }
+        findViewById<View>(R.id.btnSaveSplitObsidian).setOnClickListener { saveSplitObsidian() }
+        findViewById<View>(R.id.btnCloseSplitObsidian).setOnClickListener { toggleSplitObsidian(forceClose = true) }
+        findViewById<View>(R.id.btnCloseFilmstrip).setOnClickListener { toggleFilmstripBar(forceClose = true) }
         btnAddPage.setOnClickListener { insertPageAfter(currentPageIndex) }
         findViewById<View>(R.id.btnPages).setOnClickListener { showPageOverview() }
         findViewById<View>(R.id.btnRecognize).setOnClickListener { recognizeCurrentPage() }
@@ -445,8 +467,9 @@ class EditorActivity : AppCompatActivity() {
                 if (points.isEmpty()) inkCanvas.setPenDown(false)
                 val pts = inkCanvas.toPage(points)
                 when (tools.tool) {
-                    Tool.PEN, Tool.HIGHLIGHTER, Tool.SHAPE ->
+                    Tool.PEN, Tool.HIGHLIGHTER, Tool.SHAPE, Tool.TAPE ->
                         inkCanvas.setTransientStroke(if (pts.isEmpty() || !startsOnPage(pts)) null else newStroke(pts))
+                    Tool.LASER -> inkCanvas.addLaserTrail(pts, tools.laserColor)
                     Tool.ERASER -> liveErase(pts)
                     Tool.LASSO -> inkCanvas.setLassoPath(pts)
                     Tool.TEXT -> Unit
@@ -459,7 +482,7 @@ class EditorActivity : AppCompatActivity() {
                 if (points.isEmpty()) return
                 val pts = inkCanvas.toPage(points)
                 val inkTool = tools.tool == Tool.PEN || tools.tool == Tool.HIGHLIGHTER ||
-                    tools.tool == Tool.SHAPE || tools.tool == Tool.TEXT
+                    tools.tool == Tool.SHAPE || tools.tool == Tool.TEXT || tools.tool == Tool.TAPE
                 if (inkTool && !startsOnPage(pts)) {
                     // 从页面外的灰边落笔：不属于页面，忽略（并刷掉直绘层可能画出的痕迹）
                     withPenPaused { inkCanvas.invalidate() }
@@ -467,9 +490,13 @@ class EditorActivity : AppCompatActivity() {
                 }
                 when (tools.tool) {
                     Tool.PEN, Tool.HIGHLIGHTER, Tool.SHAPE -> handleInk(pts)
+                    Tool.TAPE -> handleTapeStroke(pts)
+                    Tool.LASER -> {
+                        inkCanvas.addLaserTrail(pts, tools.laserColor)
+                        withPenPaused { inkCanvas.invalidate() }
+                    }
                     Tool.ERASER -> finishErase(pts)
                     Tool.LASSO -> if (isTap(pts)) {
-                        // 直绘层可能留下一个虚线小点，顺带刷掉
                         withPenPaused { inkCanvas.setLassoPath(emptyList()) }
                         handleTap(pts[0].x, pts[0].y, byPen = true)
                     } else {
@@ -560,6 +587,8 @@ class EditorActivity : AppCompatActivity() {
             Tool.ERASER -> showEraserSettingsDialog()
             Tool.TEXT -> showTextDefaultsDialog()
             Tool.LASSO -> clipboardPaste()
+            Tool.TAPE -> toggleAllTapesReveal()
+            Tool.LASER -> toast("激光教鞭：书写轨迹将在 1.6 秒后自动消隐")
         }
     }
 
@@ -662,6 +691,24 @@ class EditorActivity : AppCompatActivity() {
             Tool.LASSO -> showHint(
                 if (app.clipboard != null) "圈选后可拖动/缩放/旋转 · 长按套索粘贴" else "圈选后可拖动、缩放、旋转、删除、复制"
             )
+            Tool.TAPE -> {
+                PenPresets.HIGHLIGHTERS.forEach { style ->
+                    layoutQuickColors.addView(Chips.swatch(this, style.hex, style.hex.equals(tools.tapeColor, true)) {
+                        tools = tools.copy(tapeColor = style.hex)
+                        applyTools()
+                    })
+                }
+                showHint("涂抹生成遮挡条 · 点按胶带揭开/隐藏 · 再点工具按钮一键全显/全隐")
+            }
+            Tool.LASER -> {
+                listOf("#EF4444", "#3B82F6", "#10B981", "#F59E0B").forEach { hex ->
+                    layoutQuickColors.addView(Chips.swatch(this, hex, hex.equals(tools.laserColor, true)) {
+                        tools = tools.copy(laserColor = hex)
+                        applyTools()
+                    })
+                }
+                showHint("激光教鞭 · 演示轨迹 1.6 秒自动消隐")
+            }
         }
         val isVertical = tools.dockPosition == DockPosition.LEFT || tools.dockPosition == DockPosition.RIGHT
         if (!isVertical) {
@@ -962,9 +1009,120 @@ class EditorActivity : AppCompatActivity() {
         return points.maxOf { it.x } - points.minOf { it.x } < slop && points.maxOf { it.y } - points.minOf { it.y } < slop
     }
 
-    /** 点按：页面链接跳转；文字工具下新建或编辑文字框。 */
+
+    /** 记忆胶带工具：横向划过重点文字即生成一条平整的复习遮挡胶带；若只是点按已有胶带则切换揭开/遮挡。 */
+    private fun handleTapeStroke(points: List<InkPoint>) {
+        if (points.isEmpty()) return
+        if (isTap(points)) {
+            handleTap(points[0].x, points[0].y, byPen = true)
+            return
+        }
+        val minX = points.minOf { it.x }
+        val maxX = points.maxOf { it.x }
+        val avgY = points.map { it.y }.average().toFloat()
+        val w = (maxX - minX).coerceAtLeast(48f)
+        val h = tools.tapeHeight.coerceIn(24f, 80f)
+        val tape = TapeMask(
+            x = minX,
+            y = (avgY - h / 2f).coerceAtLeast(0f),
+            width = w,
+            height = h,
+            color = tools.tapeColor,
+            revealed = false,
+            layer = activeLayer(),
+        )
+        val before = page()
+        commitPage(before, before.copy(tapes = before.tapes + tape))
+    }
+
+    /** 一键将当前页所有记忆胶带全部揭开或全部遮挡（背诵自测完一键核对答案）。 */
+    private fun toggleAllTapesReveal() {
+        val before = page()
+        if (before.tapes.isEmpty()) {
+            toast("本页还没有记忆遮挡胶带，在重点文字上横向涂抹即可添加")
+            return
+        }
+        val anyHidden = before.tapes.any { !it.revealed }
+        val after = before.copy(tapes = before.tapes.map { it.copy(revealed = anyHidden) })
+        commitPage(before, after)
+        toast(if (anyHidden) "已揭开本页全部记忆胶带" else "已遮挡本页全部记忆胶带")
+    }
+
+    /** 切换底部页面胶片快速导航栏。 */
+    private fun toggleFilmstripBar(forceClose: Boolean = false) {
+        val show = if (forceClose) false else layoutFilmstripBar.visibility != View.VISIBLE
+        layoutFilmstripBar.visibility = if (show) View.VISIBLE else View.GONE
+        if (show) refreshFilmstripBar()
+        updateExcludeRects()
+    }
+
+    private fun refreshFilmstripBar() {
+        if (layoutFilmstripBar.visibility != View.VISIBLE) return
+        layoutFilmstripItems.removeAllViews()
+        note.pages.forEachIndexed { idx, p ->
+            val label = buildString {
+                append("P${idx + 1}")
+                if (!p.bookmark.isNullOrBlank()) append("·${p.bookmark.take(6)}")
+            }
+            layoutFilmstripItems.addView(Chips.text(this, label, idx == currentPageIndex) {
+                goToPage(idx)
+            })
+        }
+        if (PageOps.canEditStructure(note)) {
+            layoutFilmstripItems.addView(Chips.text(this, "＋ 新页", false) {
+                insertPageAfter(currentPageIndex)
+            })
+        }
+    }
+
+    /** 切换右侧 Obsidian 实时双栏对照视图。 */
+    private fun toggleSplitObsidian(forceClose: Boolean = false) {
+        val show = if (forceClose) false else layoutSplitObsidian.visibility != View.VISIBLE
+        if (!show && layoutSplitObsidian.visibility == View.VISIBLE) {
+            saveSplitObsidian(silent = true)
+        }
+        layoutSplitObsidian.visibility = if (show) View.VISIBLE else View.GONE
+        btnSplitObsidian.setBackgroundResource(if (show) R.drawable.bg_tool_active else R.drawable.bg_button_secondary)
+        if (show) {
+            etSplitObsidianMd.setText(note.userMarkdown.orEmpty())
+            refreshSplitOcrPreview()
+        }
+        inkCanvas.post { updateExcludeRects() }
+    }
+
+    private fun refreshSplitOcrPreview() {
+        if (layoutSplitObsidian.visibility != View.VISIBLE) return
+        val cur = note.pages.getOrNull(currentPageIndex)
+        val ocr = cur?.recognizedText?.trim().orEmpty()
+        tvSplitOcrPreview.text = if (ocr.isNotEmpty()) ocr else "（本页暂无手写识别结果，点顶栏「识别」或翻页自动提取）"
+    }
+
+    private fun saveSplitObsidian(silent: Boolean = false) {
+        val newText = etSplitObsidianMd.text.toString().trim().ifEmpty { null }
+        if (newText != note.userMarkdown) {
+            note = note.copy(userMarkdown = newText, updatedAt = System.currentTimeMillis())
+            saveNow()
+            if (!silent) toast("已保存 Obsidian 备注，下次同步自动推送")
+        } else if (!silent) {
+            toast("内容已是最新")
+        }
+    }
+
+    /** 点按：记忆胶带揭开/隐藏、待办清单复选框打勾、页面链接跳转、文字框新建或编辑。 */
     private fun handleTap(x: Float, y: Float, byPen: Boolean) {
-        val hit = TextLayout.hit(page(), x, y)
+        val curPage = page()
+        // 1. 优先响应记忆遮挡胶带点按切换（主动回忆揭开/遮挡）
+        val hitTape = curPage.tapes.lastOrNull { it.contains(x, y) }
+        if (hitTape != null) {
+            val updatedTapes = curPage.tapes.map { if (it.id == hitTape.id) it.copy(revealed = !it.revealed) else it }
+            commitPage(curPage, curPage.copy(tapes = updatedTapes))
+            return
+        }
+        // 2. 待办清单模板左侧复选框交互式打勾/取消打勾
+        if (!byPen && curPage.template == PageTemplate.TODO && toggleTodoCheckboxAt(curPage, x, y)) {
+            return
+        }
+        val hit = TextLayout.hit(curPage, x, y)
         if (tools.tool == Tool.TEXT && byPen) {
             showTextDialog(hit, x, y)
             return
@@ -976,6 +1134,46 @@ class EditorActivity : AppCompatActivity() {
             return
         }
         if (tools.tool == Tool.TEXT) showTextDialog(hit, x, y)
+    }
+
+
+    /** 在待办清单（TODO）模板左侧复选框区域点按时，自动切换打勾笔画。 */
+    private fun toggleTodoCheckboxAt(p: Page, x: Float, y: Float): Boolean {
+        val d = com.adnote.template.TemplateLayout.density(p.width)
+        val boxLeft = 60f * d
+        val boxSize = 26f * d
+        if (x !in (boxLeft - 14f * d)..(boxLeft + boxSize + 14f * d)) return false
+        val firstRowY = 174f * d
+        val spacing = 64f * d
+        if (y < firstRowY - boxSize - 20f * d) return false
+        val row = Math.round((y - (firstRowY - boxSize / 2f - 12f * d)) / spacing)
+        val rowLineY = firstRowY + row * spacing
+        if (rowLineY > p.height - 60f * d) return false
+        val boxTop = rowLineY - boxSize - 12f * d
+        val cx = boxLeft + boxSize / 2f
+        val cy = boxTop + boxSize / 2f
+        if (kotlin.math.abs(y - cy) > boxSize) return false
+
+        // 查找该复选框内是否已有打勾笔画
+        val existing = p.strokes.firstOrNull { s ->
+            val b = StrokeGeometry.bounds(s)
+            val scx = (b[0] + b[2]) / 2f
+            val scy = (b[1] + b[3]) / 2f
+            scx in boxLeft..(boxLeft + boxSize) && scy in boxTop..(boxTop + boxSize) &&
+                (b[2] - b[0]) <= boxSize * 1.8f && (b[3] - b[1]) <= boxSize * 1.8f
+        }
+        if (existing != null) {
+            commitPage(p, p.copy(strokes = p.strokes.filterNot { it.id == existing.id }))
+        } else {
+            val checkPts = listOf(
+                InkPoint(boxLeft + boxSize * 0.18f, boxTop + boxSize * 0.55f, 0.75f),
+                InkPoint(boxLeft + boxSize * 0.44f, boxTop + boxSize * 0.82f, 0.85f),
+                InkPoint(boxLeft + boxSize * 0.88f, boxTop + boxSize * 0.20f, 0.70f),
+            )
+            val checkStroke = Stroke(points = checkPts, width = 3.5f * d, color = "#047857", pen = PenType.MARKER, layer = activeLayer())
+            commitPage(p, p.copy(strokes = p.strokes + checkStroke))
+        }
+        return true
     }
 
     private fun applyErase(path: List<InkPoint>) {
@@ -1091,7 +1289,7 @@ class EditorActivity : AppCompatActivity() {
     /** 撤销只恢复内容（笔画、文字、图片、图层），底纹、书签等页面设置保持当前值。 */
     private fun withCurrentSettings(snapshot: Page): Page {
         val cur = note.pages.getOrNull(currentPageIndex) ?: return snapshot
-        return cur.copy(strokes = snapshot.strokes, texts = snapshot.texts, images = snapshot.images, layers = snapshot.layers)
+        return cur.copy(strokes = snapshot.strokes, texts = snapshot.texts, images = snapshot.images, tapes = snapshot.tapes, layers = snapshot.layers)
     }
 
     private fun updateUndoRedo() {
@@ -1754,6 +1952,8 @@ class EditorActivity : AppCompatActivity() {
         btnNextPage.isEnabled = canNext
         btnNextPage.alpha = if (canNext) 1f else 0.35f
         btnNextPage.contentDescription = if (currentPageIndex < last) "下一页" else "新建一页"
+        refreshFilmstripBar()
+        refreshSplitOcrPreview()
     }
 
     private fun updateZoomLabel() {
@@ -2437,7 +2637,7 @@ class EditorActivity : AppCompatActivity() {
         if (currentPageIndex !in note.pages.indices) return
         val list = note.pages.toMutableList()
         list[currentPageIndex] = list[currentPageIndex].copy(
-            strokes = canvasPage.strokes, texts = canvasPage.texts, images = canvasPage.images, layers = canvasPage.layers,
+            strokes = canvasPage.strokes, texts = canvasPage.texts, images = canvasPage.images, tapes = canvasPage.tapes, layers = canvasPage.layers,
         )
         note = note.copy(pages = list, lastPageIndex = currentPageIndex, updatedAt = System.currentTimeMillis())
     }
@@ -2507,7 +2707,19 @@ class EditorActivity : AppCompatActivity() {
         }
     }
 
-    private fun toast(msg: String) = Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
+    /**
+     * 墨水屏防残影反馈：在墨水屏设备上，优先使用工具栏内嵌静态文字栏 [tvToolHint] 显示状态提示，
+     * 避免系统浮动 Toast 的淡入淡出动画在画布底部留下灰框残影或打断硬件直绘。
+     */
+    private fun toast(msg: String) {
+        if (isEink && ::tvToolHint.isInitialized && !isZenMode && tools.dockPosition == DockPosition.TOP) {
+            tvToolHint.visibility = View.VISIBLE
+            tvToolHint.text = "✓ $msg"
+            EinkRefresher.refreshFast(tvToolHint)
+            return
+        }
+        Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
+    }
 
     // endregion
 

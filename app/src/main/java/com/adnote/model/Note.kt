@@ -36,6 +36,7 @@ data class Stroke(
     @EncodeDefault(EncodeDefault.Mode.NEVER) val layer: Int = 0,
 )
 
+@OptIn(ExperimentalSerializationApi::class)
 @Serializable
 data class Page(
     val id: String = newId(),
@@ -51,6 +52,8 @@ data class Page(
     val texts: List<TextBox> = emptyList(),
     /** 插入的图片。 */
     val images: List<ImageItem> = emptyList(),
+    /** 记忆遮挡胶带（主动回忆/背诵遮挡条）。 */
+    @EncodeDefault(EncodeDefault.Mode.NEVER) val tapes: List<TapeMask> = emptyList(),
     /** 图层，列表顺序即绘制顺序（后者在上）。 */
     val layers: List<Layer> = listOf(Layer.DEFAULT),
     /** 自定义背景图（相对笔记目录的路径），绘制在纸色之上、底纹之下。 */
@@ -109,6 +112,8 @@ data class Note(
     val lockHash: String? = null,
     /** 封面色 Hex，显示在笔记列表卡片上。 */
     val coverColor: String? = null,
+    /** 是否星标置顶收藏。 */
+    @EncodeDefault(EncodeDefault.Mode.NEVER) val isStarred: Boolean = false,
     /**
      * 坐标版本：0 = 旧版（笔迹按当时的画布视图坐标保存），1 = 页面坐标。
      * 旧笔记第一次在编辑器打开时由 [LegacyCoords] 迁移。
@@ -123,6 +128,18 @@ data class Note(
 
     val isDirty: Boolean get() = updatedAt > sync.lastSyncedAt
     val isPdf: Boolean get() = !pdfPath.isNullOrBlank()
+
+    /** 用于列表卡片展示的摘要预览（上锁笔记隐藏摘要以保护隐私）。 */
+    fun snippetPreview(maxChars: Int = 72): String {
+        if (isLocked) return ""
+        val raw = userMarkdown?.trim()?.takeIf { it.isNotEmpty() }
+            ?: pages.firstNotNullOfOrNull { p -> p.recognizedText?.trim()?.takeIf { it.isNotEmpty() } }
+            ?: pages.firstNotNullOfOrNull { p -> p.texts.firstOrNull()?.text?.trim()?.takeIf { it.isNotEmpty() } }
+            ?: pages.firstNotNullOfOrNull { p -> p.bookmark?.trim()?.takeIf { it.isNotEmpty() } }
+            ?: return ""
+        val singleLine = raw.replace(Regex("\\s+"), " ").trim()
+        return if (singleLine.length <= maxChars) singleLine else singleLine.take(maxChars) + "…"
+    }
 
     /** 用于本地搜索的全文：标题 + 标签 + 识别文字 + Obsidian正文。 */
     fun searchableText(): String = buildString {

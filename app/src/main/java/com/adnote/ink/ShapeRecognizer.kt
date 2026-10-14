@@ -4,18 +4,19 @@ import com.adnote.model.InkPoint
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.acos
+import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.hypot
 import kotlin.math.max
 import kotlin.math.sin
 
 /**
- * 手绘形状识别：把歪歪扭扭的直线、三角形、矩形、椭圆/圆规整成标准图形。
+ * 手绘形状识别：把歪歪扭扭的直线、单笔箭头、三角形、矩形、五边形、六边形、椭圆/圆规整成标准图形。
  * 输出仍是采样点列表，作为普通笔画保存，导出与同步无需任何特殊处理。
  */
 object ShapeRecognizer {
 
-    enum class Kind { LINE, TRIANGLE, RECTANGLE, QUAD, ELLIPSE, CIRCLE }
+    enum class Kind { LINE, ARROW, TRIANGLE, RECTANGLE, QUAD, PENTAGON, HEXAGON, ELLIPSE, CIRCLE }
 
     data class Result(val kind: Kind, val points: List<InkPoint>)
 
@@ -52,6 +53,9 @@ object ShapeRecognizer {
             }
         }
 
+        // 单笔箭头（主干直线 + 末端折返箭头翼）
+        recognizeArrow(pts, diag, pressure)?.let { return it }
+
         // 闭合图形：首尾距离小于包围盒对角线的 25%
         if (chord > 0.25f * diag) return null
         val closed = pts + pts.first()
@@ -76,6 +80,8 @@ object ShapeRecognizer {
                 }
                 return Result(Kind.QUAD, densify(corners + corners.first(), pressure))
             }
+            5 -> return Result(Kind.PENTAGON, densify(corners + corners.first(), pressure))
+            6 -> return Result(Kind.HEXAGON, densify(corners + corners.first(), pressure))
         }
 
         // 椭圆：用包围盒拟合，检查各点到椭圆的归一化误差
@@ -95,6 +101,45 @@ object ShapeRecognizer {
             InkPoint(cx + rx * cos(a).toFloat(), cy + ry * sin(a).toFloat(), pressure)
         }
         return Result(if (circle) Kind.CIRCLE else Kind.ELLIPSE, ring)
+    }
+
+    /**
+     * 识别一笔连画的箭头：前半段（至少占总点数 55%）为直线主干，末端在顶点附近折返画出箭头翼。
+     */
+    private fun recognizeArrow(pts: List<InkPoint>, diag: Float, pressure: Float): Result? {
+        if (pts.size < 6 || diag < 40f) return null
+        val start = pts.first()
+        // 找到离起点最远的点作为箭头尖端候选
+        val tipIdx = pts.indices.maxByOrNull { hypot(pts[it].x - start.x, pts[it].y - start.y) } ?: return null
+        if (tipIdx < pts.size / 2 || tipIdx >= pts.lastIndex) return null
+        val tip = pts[tipIdx]
+        val shaftLen = hypot(tip.x - start.x, tip.y - start.y)
+        if (shaftLen < 0.7f * diag) return null
+
+        val shaftPts = pts.subList(0, tipIdx + 1)
+        val maxShaftDev = shaftPts.maxOf { Eraser.distToSegment(it, start, tip) }
+        if (maxShaftDev > max(0.08f * shaftLen, 8f)) return null
+
+        val tailPts = pts.subList(tipIdx, pts.size)
+        val tailLen = pathLength(tailPts)
+        if (tailLen < 0.08f * shaftLen || tailLen > 0.75f * shaftLen) return null
+
+        // 生成标准对称箭头折线：start -> tip -> 左翼 -> tip -> 右翼
+        val angle = atan2(tip.y - start.y, tip.x - start.x)
+        val headLen = (shaftLen * 0.18f).coerceIn(16f, 48f)
+        val wingAngle = (PI * 0.82).toFloat()
+        val wing1 = InkPoint(
+            tip.x + headLen * cos(angle + wingAngle),
+            tip.y + headLen * sin(angle + wingAngle),
+            pressure,
+        )
+        val wing2 = InkPoint(
+            tip.x + headLen * cos(angle - wingAngle),
+            tip.y + headLen * sin(angle - wingAngle),
+            pressure,
+        )
+        val vertices = listOf(start, tip, wing1, tip, wing2)
+        return Result(Kind.ARROW, densify(vertices, pressure))
     }
 
     /** 顶点 i 处的内角（弧度）。 */

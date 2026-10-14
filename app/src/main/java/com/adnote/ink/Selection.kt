@@ -4,6 +4,7 @@ import com.adnote.model.ImageItem
 import com.adnote.model.InkPoint
 import com.adnote.model.Page
 import com.adnote.model.Stroke
+import com.adnote.model.TapeMask
 import com.adnote.model.TextBox
 import com.adnote.model.newId
 import kotlin.math.cos
@@ -11,14 +12,15 @@ import kotlin.math.max
 import kotlin.math.sin
 import kotlin.math.sqrt
 
-/** 选区：笔画、文字框、图片的 id。 */
+/** 选区：笔画、文字框、图片与记忆胶带的 id。 */
 data class Selection(
     val strokes: Set<String> = emptySet(),
     val texts: Set<String> = emptySet(),
     val images: Set<String> = emptySet(),
+    val tapes: Set<String> = emptySet(),
 ) {
-    val isEmpty: Boolean get() = strokes.isEmpty() && texts.isEmpty() && images.isEmpty()
-    val size: Int get() = strokes.size + texts.size + images.size
+    val isEmpty: Boolean get() = strokes.isEmpty() && texts.isEmpty() && images.isEmpty() && tapes.isEmpty()
+    val size: Int get() = strokes.size + texts.size + images.size + tapes.size
 
     companion object {
         val EMPTY = Selection()
@@ -31,6 +33,7 @@ data class ClipContent(
     val texts: List<TextBox>,
     val images: List<ImageItem>,
     val sourceNoteId: String,
+    val tapes: List<TapeMask> = emptyList(),
 )
 
 /** 二维仿射变换 x' = a·x + c·y + tx, y' = b·x + d·y + ty。 */
@@ -71,7 +74,10 @@ object SelectionOps {
         val images = page.images.filter { it.layer in layers }.filter { i ->
             Lasso.contains(lasso, i.x + i.width / 2f, i.y + i.height / 2f)
         }.map { it.id }.toSet()
-        return Selection(strokes, texts, images)
+        val tapes = page.tapes.filter { it.layer in layers }.filter { tp ->
+            Lasso.contains(lasso, tp.x + tp.width / 2f, tp.y + tp.height / 2f)
+        }.map { it.id }.toSet()
+        return Selection(strokes, texts, images, tapes)
     }
 
     /** 选区包围盒 [l, t, r, b]；空选区返回 null。 */
@@ -80,6 +86,7 @@ object SelectionOps {
         page.strokes.filter { it.id in sel.strokes }.forEach { boxes += StrokeGeometry.bounds(it) }
         page.texts.filter { it.id in sel.texts }.forEach { boxes += TextLayout.bounds(it, page.width) }
         page.images.filter { it.id in sel.images }.forEach { boxes += floatArrayOf(it.x, it.y, it.x + it.width, it.y + it.height) }
+        page.tapes.filter { it.id in sel.tapes }.forEach { boxes += floatArrayOf(it.x, it.y, it.x + it.width, it.y + it.height) }
         if (boxes.isEmpty()) return null
         return floatArrayOf(
             boxes.minOf { it[0] }, boxes.minOf { it[1] }, boxes.maxOf { it[2] }, boxes.maxOf { it[3] },
@@ -87,7 +94,7 @@ object SelectionOps {
     }
 
     /**
-     * 对选区应用变换。笔画逐点变换并按缩放倍数调整笔宽；文字框和图片保持水平，
+     * 对选区应用变换。笔画逐点变换并按缩放倍数调整笔宽；文字框、图片与胶带保持水平，
      * 只变换位置并缩放尺寸（旋转时绕选区中心移动）。
      */
     fun transform(page: Page, sel: Selection, m: Affine): Page {
@@ -121,6 +128,14 @@ object SelectionOps {
                     i.copy(x = nx - w / 2f, y = ny - h / 2f, width = w, height = h)
                 }
             },
+            tapes = page.tapes.map { tp ->
+                if (tp.id !in sel.tapes) tp else {
+                    val cx = tp.x + tp.width / 2f; val cy = tp.y + tp.height / 2f
+                    val nx = m.mapX(cx, cy); val ny = m.mapY(cx, cy)
+                    val w = max(16f, tp.width * s); val h = max(12f, tp.height * s)
+                    tp.copy(x = nx - w / 2f, y = ny - h / 2f, width = w, height = h)
+                }
+            },
         )
     }
 
@@ -128,11 +143,13 @@ object SelectionOps {
         strokes = page.strokes.filterNot { it.id in sel.strokes },
         texts = page.texts.filterNot { it.id in sel.texts },
         images = page.images.filterNot { it.id in sel.images },
+        tapes = page.tapes.filterNot { it.id in sel.tapes },
     )
 
     fun recolor(page: Page, sel: Selection, color: String): Page = page.copy(
         strokes = page.strokes.map { if (it.id in sel.strokes) it.copy(color = color) else it },
         texts = page.texts.map { if (it.id in sel.texts) it.copy(color = color) else it },
+        tapes = page.tapes.map { if (it.id in sel.tapes) it.copy(color = color) else it },
     )
 
     fun copy(page: Page, sel: Selection, noteId: String) = ClipContent(
@@ -140,6 +157,7 @@ object SelectionOps {
         texts = page.texts.filter { it.id in sel.texts },
         images = page.images.filter { it.id in sel.images },
         sourceNoteId = noteId,
+        tapes = page.tapes.filter { it.id in sel.tapes },
     )
 
     /**
@@ -157,14 +175,32 @@ object SelectionOps {
         val images = clip.images.map {
             it.copy(id = newId(), layer = layer, x = it.x + dx, y = it.y + dy, path = imagePath(it.path))
         }
-        val out = page.copy(strokes = page.strokes + strokes, texts = page.texts + texts, images = page.images + images)
-        return out to Selection(strokes.map { it.id }.toSet(), texts.map { it.id }.toSet(), images.map { it.id }.toSet())
+        val tapes = clip.tapes.map {
+            it.copy(id = newId(), layer = layer, x = it.x + dx, y = it.y + dy)
+        }
+        val out = page.copy(
+            strokes = page.strokes + strokes,
+            texts = page.texts + texts,
+            images = page.images + images,
+            tapes = page.tapes + tapes,
+        )
+        return out to Selection(
+            strokes.map { it.id }.toSet(),
+            texts.map { it.id }.toSet(),
+            images.map { it.id }.toSet(),
+            tapes.map { it.id }.toSet(),
+        )
     }
 
     /** 让剪贴板内容的包围盒中心落到 (x, y) 所需的偏移；内容为空时返回 (0, 0)。 */
     fun offsetToCenter(clip: ClipContent, pageWidth: Int, x: Float, y: Float): Pair<Float, Float> {
-        val tmp = Page(width = pageWidth, height = Int.MAX_VALUE, strokes = clip.strokes, texts = clip.texts, images = clip.images)
-        val sel = Selection(clip.strokes.map { it.id }.toSet(), clip.texts.map { it.id }.toSet(), clip.images.map { it.id }.toSet())
+        val tmp = Page(width = pageWidth, height = Int.MAX_VALUE, strokes = clip.strokes, texts = clip.texts, images = clip.images, tapes = clip.tapes)
+        val sel = Selection(
+            clip.strokes.map { it.id }.toSet(),
+            clip.texts.map { it.id }.toSet(),
+            clip.images.map { it.id }.toSet(),
+            clip.tapes.map { it.id }.toSet(),
+        )
         val b = bounds(tmp, sel) ?: return 0f to 0f
         return (x - (b[0] + b[2]) / 2f) to (y - (b[1] + b[3]) / 2f)
     }

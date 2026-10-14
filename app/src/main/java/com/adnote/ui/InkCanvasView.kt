@@ -8,6 +8,7 @@ import android.graphics.DashPathEffect
 import android.graphics.Matrix
 import android.graphics.Paint
 import android.graphics.Path
+import android.graphics.RectF
 import android.util.AttributeSet
 import android.view.MotionEvent
 import android.view.View
@@ -19,20 +20,20 @@ import com.adnote.model.InkPoint
 import com.adnote.model.Page
 import com.adnote.model.Stroke
 import com.adnote.model.Viewport
+import java.util.Locale
 import kotlin.math.abs
 import kotlin.math.atan2
 import kotlin.math.hypot
 import kotlin.math.max
+import kotlin.math.min
 
 /**
- * 手写画布。
+ * 商业级 SOTA 手写画布。
  *
  * - 内容存储在页面坐标系，经 [Viewport] 映射到屏幕：页面按宽度铺满，可双指缩放、拖动平移；
  * - 当前视口下的整页渲染结果缓存在一张位图里，书写时只叠加正在写的一笔；
- *   缩放/平移过程中先把缓存位图按比例变换显示，手势结束后再按新比例重新渲染，保证清晰；
- * - 绘制橡皮/悬停光标、套索轨迹、直尺、选区（含缩放/旋转手柄）；
- * - 处理画笔通道没有消费的触摸：手指平移缩放、横滑翻页、单击链接、双击复位、
- *   两指/三指点按（撤销/重做）、拖动直尺、拖动/缩放/旋转选区。
+ * - 绘制橡皮/悬停光标、套索轨迹、带实时角度读数与 15° 磁吸的直尺、选区（含缩放/旋转手柄）；
+ * - 支持激光教鞭轨迹自动消隐、记忆遮挡胶带预览、缩放全局小地图（Minimap）导航，以及音字同步回放高亮。
  */
 class InkCanvasView @JvmOverloads constructor(
     context: Context,
@@ -50,7 +51,7 @@ class InkCanvasView @JvmOverloads constructor(
         /** 手指横滑翻页：+1 下一页，-1 上一页。 */
         fun onSwipe(direction: Int) {}
 
-        /** 手指单击（页面坐标），用于打开链接。 */
+        /** 手指单击（页面坐标），用于打开链接、切换记忆胶带遮挡或待办打勾。 */
         fun onTap(pageX: Float, pageY: Float) {}
 
         /** 多指点按：2 = 撤销，3 = 重做。 */
@@ -62,6 +63,12 @@ class InkCanvasView @JvmOverloads constructor(
         /** 直尺被移动或旋转。 */
         fun onRulerMoved(ruler: Ruler) {}
     }
+
+    data class LaserTrail(
+        val points: List<InkPoint>,
+        val color: String,
+        val createdAtMs: Long,
+    )
 
     var listener: Listener? = null
     var stylusOnly: Boolean = false
@@ -82,6 +89,8 @@ class InkCanvasView @JvmOverloads constructor(
     private var transientStroke: Stroke? = null
     private var lassoPoints: List<InkPoint> = emptyList()
     private var ruler: Ruler? = null
+    private val laserTrails = ArrayList<LaserTrail>()
+    private var playbackCutoffMs: Long? = null
 
     private var cursorX = 0f
     private var cursorY = 0f
@@ -98,6 +107,7 @@ class InkCanvasView @JvmOverloads constructor(
     private val density = resources.displayMetrics.density
     private val pageMatrix = Matrix()
     private val cacheMatrix = Matrix()
+    private val minimapRect = RectF()
 
     private val overlayStroke = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
@@ -109,15 +119,49 @@ class InkCanvasView @JvmOverloads constructor(
     }
     private val rulerFill = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.FILL
-        color = Color.parseColor("#33A1A1AA")
+        color = Color.parseColor("#38A1A1AA")
     }
+    private val badgeTextPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.WHITE
+        textAlign = Paint.Align.CENTER
+        isFakeBoldText = true
+    }
+    private val laserPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        strokeCap = Paint.Cap.ROUND
+        strokeJoin = Paint.Join.ROUND
+    }
+    private val minimapPaint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val overlayPath = Path()
+
+    /** 墨水屏防频闪：不做 40ms 逐帧 Alpha 渐变动画，抬笔静止 900ms 后一次性清除激光轨迹（仅 1 次重绘）。 */
+    private val laserCleanupRunnable = Runnable {
+        laserTrails.clear()
+        invalidate()
+    }
 
     // region 公共接口
 
     fun setAssets(assets: BitmapAssets?) {
         renderer = PageRenderer(assets)
         invalidateContent()
+    }
+
+    /** 设置音字同步回放的时间戳截止点（毫秒）；null 表示退出回放高亮模式。 */
+    fun setPlaybackCutoff(cutoffMs: Long?) {
+        if (playbackCutoffMs == cutoffMs) return
+        playbackCutoffMs = cutoffMs
+        invalidateContent()
+    }
+
+    /** 添加一条自动消隐的激光教鞭轨迹。 */
+    fun addLaserTrail(points: List<InkPoint>, color: String = "#EF4444") {
+        if (points.isEmpty()) return
+        laserTrails.clear()
+        laserTrails += LaserTrail(points, color, android.os.SystemClock.uptimeMillis())
+        removeCallbacks(laserCleanupRunnable)
+        postDelayed(laserCleanupRunnable, LASER_HOLD_STATIC_MS)
+        invalidate()
     }
 
     /**
@@ -128,6 +172,7 @@ class InkCanvasView @JvmOverloads constructor(
         this.page = page
         transientStroke = null
         lassoPoints = emptyList()
+        laserTrails.clear()
         clearSelectionState()
         if (resetView || old == null || old.width != page.width || old.height != page.height) {
             viewport = Viewport(max(width, 1), max(height, 1), page.width, page.height).clamped()
@@ -139,18 +184,16 @@ class InkCanvasView @JvmOverloads constructor(
 
     /**
      * 替换当前页内容（撤销、擦除、编辑文字等），保持缩放与选区。
-     * [dirty] 给出变化范围（页面坐标 [l, t, r, b]）时只重画缓存里的这一块，实时擦除时每次移动都会调用，
-     * 整页重画在笔迹多的页面上跟不上笔。
      */
     fun updatePage(page: Page, dirty: FloatArray? = null) {
         val old = this.page
         val c = cacheCanvas
         if (dirty != null && old != null && c != null && !cacheDirty && cacheViewport == viewport &&
-            old.width == page.width && old.height == page.height && selection.isEmpty
+            old.width == page.width && old.height == page.height && selection.isEmpty && playbackCutoffMs == null
         ) {
             this.page = page
             val l = max(dirty[0], 0f); val t = max(dirty[1], 0f)
-            val r = kotlin.math.min(dirty[2], page.width.toFloat()); val b = kotlin.math.min(dirty[3], page.height.toFloat())
+            val r = min(dirty[2], page.width.toFloat()); val b = min(dirty[3], page.height.toFloat())
             if (l < r && t < b) {
                 c.save()
                 c.concat(matrixFor(viewport, pageMatrix))
@@ -178,14 +221,16 @@ class InkCanvasView @JvmOverloads constructor(
         invalidateContent()
     }
 
-    /** 落笔：若新笔画在最上层图层，增量画到缓存上，无需整页重绘。 */
+    /** 落笔：若新笔画在最上层图层且页面无遮挡胶带，增量画到缓存上，无需整页重绘。 */
     fun addStroke(stroke: Stroke) {
         transientStroke = null
         val p = page ?: return
         page = p.copy(strokes = p.strokes + stroke)
         val c = cacheCanvas
         val topLayer = p.layers.lastOrNull { it.visible }?.id
-        if (!cacheDirty && c != null && cacheViewport == viewport && stroke.layer == topLayer && stroke.pen != com.adnote.model.PenType.HIGHLIGHTER) {
+        if (!cacheDirty && c != null && cacheViewport == viewport && stroke.layer == topLayer &&
+            stroke.pen != com.adnote.model.PenType.HIGHLIGHTER && p.tapes.isEmpty() && playbackCutoffMs == null
+        ) {
             c.save()
             c.concat(matrixFor(viewport, pageMatrix))
             c.clipRect(0f, 0f, p.width.toFloat(), p.height.toFloat())
@@ -260,10 +305,6 @@ class InkCanvasView @JvmOverloads constructor(
 
     private val afterDrawActions = ArrayList<Runnable>()
 
-    /**
-     * 下一次 [onDraw] 完成后执行 [action]（并安排一次重绘，保证一定会画）。
-     * invalidate() 只是登记，真正绘制要等下一帧；墨水屏上要等画完再恢复直绘，否则新内容刷不出来。
-     */
     fun doAfterNextDraw(action: Runnable) {
         afterDrawActions.add(action)
         invalidate()
@@ -294,9 +335,10 @@ class InkCanvasView @JvmOverloads constructor(
         return x >= -slop && y >= -slop && x <= p.width + slop && y <= p.height + slop
     }
 
-    /** 单指按在直尺上时由画布处理（拖动直尺），而不是书写。 */
+    /** 单指按在直尺或缩放小地图上时由画布处理，而不是书写。 */
     fun wantsFinger(e: MotionEvent): Boolean =
-        ruler?.contains(viewport.toPageX(e.x), viewport.toPageY(e.y)) == true
+        ruler?.contains(viewport.toPageX(e.x), viewport.toPageY(e.y)) == true ||
+            (viewport.isZoomed && minimapRect.contains(e.x, e.y))
 
     fun toPageX(vx: Float) = viewport.toPageX(vx)
     fun toPageY(vy: Float) = viewport.toPageY(vy)
@@ -316,6 +358,7 @@ class InkCanvasView @JvmOverloads constructor(
             strokes = p.strokes.filter { it.id in selection.strokes },
             texts = p.texts.filter { it.id in selection.texts },
             images = p.images.filter { it.id in selection.images },
+            tapes = p.tapes.filter { it.id in selection.tapes },
         )
         previewPage = null
     }
@@ -344,7 +387,6 @@ class InkCanvasView @JvmOverloads constructor(
         val p = page
         viewport = if (p != null) Viewport(w, h, p.width, p.height).clamped() else Viewport(w, h, w, h)
         invalidateContent()
-        // 画布尺寸变了（工具栏换行、分屏等），页面在屏幕上的位置随之改变
         if (p != null && oldw > 0 && oldh > 0) listener?.onViewportChanged(viewport)
     }
 
@@ -367,7 +409,12 @@ class InkCanvasView @JvmOverloads constructor(
             c.save()
             c.concat(matrixFor(viewport, pageMatrix))
             c.clipRect(0f, 0f, p.width.toFloat(), p.height.toFloat())
-            renderer.drawPage(c, p, pdfBackground, hidden = selection, minLine = 1f / viewport.scale)
+            renderer.drawPage(
+                c, p, pdfBackground,
+                hidden = selection,
+                minLine = 1f / viewport.scale,
+                playbackCutoffMs = playbackCutoffMs,
+            )
             c.restore()
         }
         cacheViewport = viewport
@@ -382,7 +429,6 @@ class InkCanvasView @JvmOverloads constructor(
         if (cv == null || cv == viewport) {
             canvas.drawBitmap(bmp, 0f, 0f, null)
         } else {
-            // 手势进行中：把旧比例的缓存变换到当前视口，手势结束后重新渲染
             canvas.drawColor(OUTSIDE_COLOR)
             val k = viewport.scale / cv.scale
             cacheMatrix.reset()
@@ -402,12 +448,25 @@ class InkCanvasView @JvmOverloads constructor(
         }
 
         transientStroke?.let { s ->
-            // 书写预览与落笔后的效果一致：页面外的部分不显示
             val p = page
             canvas.save()
             if (p != null) canvas.clipRect(0f, 0f, p.width.toFloat(), p.height.toFloat())
             renderer.drawStroke(canvas, s)
             canvas.restore()
+        }
+
+        if (laserTrails.isNotEmpty()) {
+            for (trail in laserTrails) {
+                if (trail.points.size < 2) continue
+                overlayPath.reset()
+                overlayPath.moveTo(trail.points[0].x, trail.points[0].y)
+                for (i in 1 until trail.points.size) overlayPath.lineTo(trail.points[i].x, trail.points[i].y)
+                // 墨水屏高对比静态双线指示（无逐帧半透明闪烁）
+                laserPaint.color = StrokePainter.parseColor(trail.color)
+                laserPaint.alpha = 255
+                laserPaint.strokeWidth = 4.5f / scale
+                canvas.drawPath(overlayPath, laserPaint)
+            }
         }
 
         if (lassoPoints.size > 1) {
@@ -427,12 +486,59 @@ class InkCanvasView @JvmOverloads constructor(
 
         canvas.restore()
 
+        // 墨水屏优化：手势拖拽中途不重绘小地图，仅在手势静止（!gesturing）且放大超过 120% 时静态显示
+        if (!gesturing && viewport.zoom > 1.20f) {
+            drawMinimap(canvas)
+        } else if (!viewport.isZoomed) {
+            minimapRect.setEmpty()
+        }
+
         if (afterDrawActions.isNotEmpty()) {
             val actions = afterDrawActions.toList()
             afterDrawActions.clear()
-            // post：等整棵视图树（含工具栏）这一帧都画完再执行
             actions.forEach { post(it) }
         }
+    }
+
+    private fun drawMinimap(canvas: Canvas) {
+        val p = page ?: return
+        if (p.width <= 0 || p.height <= 0) return
+        val maxSide = 96f * density
+        val ratio = p.width.toFloat() / p.height.toFloat()
+        val mapW = if (ratio >= 1f) maxSide else maxSide * ratio
+        val mapH = if (ratio >= 1f) maxSide / ratio else maxSide
+        val margin = 14f * density
+        val left = width - mapW - margin
+        val top = height - mapH - margin
+        minimapRect.set(left, top, left + mapW, top + mapH)
+
+        // 背景与边框
+        minimapPaint.style = Paint.Style.FILL
+        minimapPaint.color = Color.parseColor("#E6FFFFFF")
+        canvas.drawRoundRect(minimapRect, 6f * density, 6f * density, minimapPaint)
+        minimapPaint.style = Paint.Style.STROKE
+        minimapPaint.strokeWidth = 1.2f * density
+        minimapPaint.color = Color.parseColor("#9CA3AF")
+        canvas.drawRoundRect(minimapRect, 6f * density, 6f * density, minimapPaint)
+
+        // 当前视口在整页中的比例框
+        val vx0 = (viewport.toPageX(0f) / p.width).coerceIn(0f, 1f)
+        val vy0 = (viewport.toPageY(0f) / p.height).coerceIn(0f, 1f)
+        val vx1 = (viewport.toPageX(width.toFloat()) / p.width).coerceIn(0f, 1f)
+        val vy1 = (viewport.toPageY(height.toFloat()) / p.height).coerceIn(0f, 1f)
+        val vr = RectF(
+            left + vx0 * mapW,
+            top + vy0 * mapH,
+            left + vx1 * mapW,
+            top + vy1 * mapH,
+        )
+        minimapPaint.style = Paint.Style.FILL
+        minimapPaint.color = Color.parseColor("#26111827")
+        canvas.drawRect(vr, minimapPaint)
+        minimapPaint.style = Paint.Style.STROKE
+        minimapPaint.strokeWidth = 1.8f * density
+        minimapPaint.color = Color.parseColor("#111827")
+        canvas.drawRect(vr, minimapPaint)
     }
 
     private fun setDashed(p: Paint, scale: Float) {
@@ -478,11 +584,23 @@ class InkCanvasView @JvmOverloads constructor(
             canvas.drawLine(x, y, x + nx * len, y + ny * len, overlayStroke)
             a += 20f; i++
         }
+        // 中央实时角度胶囊读数（量角器指示）
+        val badgeW = 64f * density / scale
+        val badgeH = 22f * density / scale
+        canvas.save()
+        canvas.translate(r.cx, r.cy)
+        canvas.rotate(Math.toDegrees(r.angle.toDouble()).toFloat())
+        val rect = RectF(-badgeW / 2f, -badgeH / 2f, badgeW / 2f, badgeH / 2f)
+        canvas.drawRoundRect(rect, badgeH / 2f, badgeH / 2f, handleFill)
+        badgeTextPaint.textSize = 11f * density / scale
+        val label = String.format(Locale.US, "%.1f°", r.angleDegrees)
+        canvas.drawText(label, 0f, badgeTextPaint.textSize * 0.36f, badgeTextPaint)
+        canvas.restore()
     }
 
     // region 触摸
 
-    private enum class Mode { NONE, PAN, PINCH, RULER, RULER_ROTATE, SEL_MOVE, SEL_SCALE, SEL_ROTATE }
+    private enum class Mode { NONE, PAN, PINCH, MINIMAP, RULER, RULER_ROTATE, SEL_MOVE, SEL_SCALE, SEL_ROTATE }
 
     private var mode = Mode.NONE
     private var downTime = 0L
@@ -499,9 +617,7 @@ class InkCanvasView @JvmOverloads constructor(
     private var lastAngle = 0f
     private var lastTapTime = 0L
 
-    /** 这一次触摸被判定为手掌/书写时的误触，整次忽略直到抬起。 */
     private var rejected = false
-    /** 单指移动超过触摸阈值后才开始平移，避免手指微小抖动反复重绘（墨水屏上就是不停刷新）。 */
     private var panStarted = false
     private val touchSlop = android.view.ViewConfiguration.get(context).scaledTouchSlop * 2f
     private var penDown = false
@@ -512,15 +628,12 @@ class InkCanvasView @JvmOverloads constructor(
     private var selPivotX = 0f
     private var selPivotY = 0f
 
-    /** 笔按下/抬起。笔在屏幕上时（以及抬起后片刻）手指和手掌的触摸一律忽略。 */
     fun setPenDown(down: Boolean) {
-        // 只有真正按下过笔才记时间：手指书写被取消时也会走到「抬起」，不能把之后的双指手势当成误触
         if (!down && !penDown) return
         penDown = down
         lastPenTime = android.os.SystemClock.uptimeMillis()
     }
 
-    /** 笔尖悬停在屏幕上方：说明手正准备书写，同样屏蔽手掌。 */
     fun notePenNear() {
         lastPenTime = android.os.SystemClock.uptimeMillis()
     }
@@ -528,7 +641,6 @@ class InkCanvasView @JvmOverloads constructor(
     private fun penRecentlyActive(): Boolean =
         penDown || android.os.SystemClock.uptimeMillis() - lastPenTime < PALM_WINDOW_MS
 
-    /** 接触面积明显大于指尖，或驱动直接上报为手掌，或多接触点间距过大（手掌接触）。 */
     private fun isPalm(e: MotionEvent): Boolean {
         val limit = PALM_DP * density
         if ((0 until e.pointerCount).any { idx ->
@@ -537,26 +649,19 @@ class InkCanvasView @JvmOverloads constructor(
                 e.getSize(idx) > 0.25f
         }) return true
 
-        // 多指接触时，若两点间距明显大于两指自然并拢间距（如小鱼际与指关节同时压屏），判定为手掌
         if (e.pointerCount >= 2 && distance(e) > MAX_MULTI_TAP_DIST_DP * density) {
             return true
         }
         return false
     }
 
-    /**
-     * 只有画笔通道没有消费的触摸才会到这里：防误触模式或文石设备上的手指、
-     * 有选区时（画笔通道已暂停）的笔和手指，以及画笔通道转交过来的多指手势。
-     */
     override fun onTouchEvent(event: MotionEvent): Boolean {
-        // 笔只用于操作选区；其余情况笔的事件由画笔通道负责（文石直绘时视图也可能收到笔事件，不能拿来平移）
         val tool = event.getToolType(0)
         val isStylus = tool == MotionEvent.TOOL_TYPE_STYLUS || tool == MotionEvent.TOOL_TYPE_ERASER
         if (isStylus && selection.isEmpty) return false
         if (!isStylus && !selection.isEmpty && event.actionMasked == MotionEvent.ACTION_DOWN &&
             (isPalm(event) || penRecentlyActive())
         ) {
-            // 书写时搭在屏幕上的手掌不能把选区取消掉
             rejected = true
         }
         if (!isStylus && rejected && mode == Mode.NONE) {
@@ -571,11 +676,9 @@ class InkCanvasView @JvmOverloads constructor(
         return handleGesture(event)
     }
 
-    /** 手指手势。也供画笔通道在检测到多指时转交（可以从 POINTER_DOWN 中途开始）。 */
     fun handleGesture(e: MotionEvent): Boolean {
         val action = e.actionMasked
         if (action == MotionEvent.ACTION_DOWN) rejected = false
-        // 手掌，或者笔正在/刚刚书写：整次触摸作废，不平移、不缩放、不翻页、不触发多指撤销
         if (!rejected && (isPalm(e) || penRecentlyActive())) rejectGesture()
         if (rejected) {
             if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
@@ -607,6 +710,7 @@ class InkCanvasView @JvmOverloads constructor(
                 val x = e.getX(0); val y = e.getY(0)
                 travel += abs(x - lastX) + abs(y - lastY)
                 when (mode) {
+                    Mode.MINIMAP -> panToMinimapPoint(x, y)
                     Mode.PAN -> if (e.pointerCount == 1 && (panStarted || hypot(x - downX, y - downY) > touchSlop)) {
                         panStarted = true
                         val vp = viewport
@@ -629,7 +733,7 @@ class InkCanvasView @JvmOverloads constructor(
                     }
                     Mode.RULER_ROTATE -> if (e.pointerCount >= 2) ruler?.let {
                         val a = angle(e)
-                        ruler = it.rotated(a - lastAngle)
+                        ruler = it.rotated(a - lastAngle).withMagneticSnap()
                         lastAngle = a
                         invalidate()
                     }
@@ -638,7 +742,6 @@ class InkCanvasView @JvmOverloads constructor(
                 lastX = x; lastY = y
             }
             MotionEvent.ACTION_POINTER_UP -> {
-                // 剩下的手指继续平移时，从它当前的位置开始，避免跳动
                 val remaining = if (e.actionIndex == 0) 1 else 0
                 lastX = e.getX(remaining); lastY = e.getY(remaining)
                 if (mode == Mode.PINCH && e.pointerCount - 1 < 2) mode = Mode.PAN
@@ -656,6 +759,21 @@ class InkCanvasView @JvmOverloads constructor(
         return true
     }
 
+    private fun panToMinimapPoint(vx: Float, vy: Float) {
+        val p = page ?: return
+        if (minimapRect.isEmpty) return
+        val rx = ((vx - minimapRect.left) / minimapRect.width()).coerceIn(0f, 1f)
+        val ry = ((vy - minimapRect.top) / minimapRect.height()).coerceIn(0f, 1f)
+        val targetPageX = rx * p.width
+        val targetPageY = ry * p.height
+        val next = viewport.copy(
+            panX = targetPageX * viewport.scale - width / 2f,
+            panY = targetPageY * viewport.scale - height / 2f,
+        ).clamped()
+        gesturing = true
+        applyViewport(next, notify = false)
+    }
+
     private fun Mode.isSelection() = this == Mode.SEL_MOVE || this == Mode.SEL_SCALE || this == Mode.SEL_ROTATE
 
     private fun startGesture(e: MotionEvent) {
@@ -666,15 +784,20 @@ class InkCanvasView @JvmOverloads constructor(
         panStarted = false
         maxPointers = e.pointerCount
         val r = ruler
-        mode = if (r != null && r.contains(viewport.toPageX(downX), viewport.toPageY(downY))) Mode.RULER else Mode.PAN
+        mode = when {
+            viewport.isZoomed && minimapRect.contains(downX, downY) -> {
+                panToMinimapPoint(downX, downY)
+                Mode.MINIMAP
+            }
+            r != null && r.contains(viewport.toPageX(downX), viewport.toPageY(downY)) -> Mode.RULER
+            else -> Mode.PAN
+        }
     }
 
     private fun finishGesture(e: MotionEvent) {
         val duration = e.eventTime - downTime
         val tapSlop = 12f * density
         if (maxPointers >= 2) {
-            // 防误触：仅当未开启防误触模式、两指间距在自然并拢范围（排除手掌分散接触点）、
-            // 且最近没有提笔书写/悬停时，才允许响应双指/三指点按撤销重做，避免手掌压屏消字
             val fingersClose = pinchStartDist <= MAX_MULTI_TAP_DIST_DP * density
             if (!stylusOnly && fingersClose && !penRecentlyActive() &&
                 duration < MULTI_TAP_MS && travel < 40f * density &&
@@ -701,7 +824,6 @@ class InkCanvasView @JvmOverloads constructor(
         endViewportGesture()
     }
 
-    /** 放弃当前手势：视口停在当前位置，按新比例重新渲染一次。 */
     private fun rejectGesture() {
         rejected = true
         endViewportGesture()
@@ -756,7 +878,6 @@ class InkCanvasView @JvmOverloads constructor(
                 val moved = hypot(px - selStartX, py - selStartY) > 2f / viewport.scale
                 previewTransform = null
                 if (t != null && moved) {
-                    // 回调里会用变换后的内容更新页面，并重新 setSelection
                     listener?.onSelectionTransformed(t)
                 } else {
                     previewPage = null
@@ -798,6 +919,7 @@ class InkCanvasView @JvmOverloads constructor(
 
     override fun onDetachedFromWindow() {
         super.onDetachedFromWindow()
+        removeCallbacks(laserCleanupRunnable)
         cache?.recycle()
         cache = null
         cacheCanvas = null
@@ -807,17 +929,15 @@ class InkCanvasView @JvmOverloads constructor(
     companion object {
         private const val TOOL_TYPE_PALM = 5
         private const val SWIPE_MIN_DP = 80f
-        /** 接触长轴超过这个尺寸（dp）视为手掌。降低阈值以更灵敏地识别大接触面。 */
         private const val PALM_DP = 20f
-        /** 笔抬起后这么久之内的手指触摸视为手掌误触（延长到 2 秒，覆盖书写换行与停顿的自然间隔）。 */
         private const val PALM_WINDOW_MS = 2000L
-        /** 真正的双指点按两指间距上限（dp），超过此间距必然是手掌两端而非并拢双指。 */
         private const val MAX_MULTI_TAP_DIST_DP = 70f
         private const val TAP_MS = 300L
         private const val DOUBLE_TAP_MS = 350L
         private const val MULTI_TAP_MS = 350L
         private const val HANDLE_DP = 22f
         private const val ROTATE_OFFSET_DP = 28f
+        private const val LASER_HOLD_STATIC_MS = 900L
         private val OUTSIDE_COLOR = Color.parseColor("#E5E7EB")
     }
 }

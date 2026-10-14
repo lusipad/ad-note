@@ -14,9 +14,9 @@
         android:layout_height="wrap_content"
         android:orientation="horizontal"
         android:gravity="center_vertical"
-        android:layout_marginBottom="12dp">
+        android:layout_marginBottom="10dp">
 
-        <!-- 标题与版本品牌 -->
+        <!-- 标题与版本品牌 + 实时统计副标题 -->
         <LinearLayout
             android:layout_width="0dp"
             android:layout_height="wrap_content"
@@ -26,13 +26,14 @@
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="AdNote"
+                android:text="AdNote Pro"
                 android:textSize="22sp"
                 android:textStyle="bold"
                 android:textColor="@color/text_primary"
                 android:letterSpacing="0.02" />
 
             <TextView
+                android:id="@+id/tvWorkspaceStats"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="墨水屏手写 · Obsidian 互联"
@@ -70,6 +71,45 @@
             android:layout_marginEnd="6dp" />
 
         <Button
+            android:id="@+id/btnSort"
+            android:layout_width="wrap_content"
+            android:layout_height="36dp"
+            android:text="排序 ▾"
+            android:textSize="12sp"
+            android:textColor="@color/text_primary"
+            android:background="@drawable/bg_button_secondary"
+            android:paddingHorizontal="8dp"
+            android:minWidth="0dp"
+            android:stateListAnimator="@null"
+            android:layout_marginEnd="6dp" />
+
+        <Button
+            android:id="@+id/btnLayoutMode"
+            android:layout_width="wrap_content"
+            android:layout_height="36dp"
+            android:text="网格"
+            android:textSize="12sp"
+            android:textColor="@color/text_primary"
+            android:background="@drawable/bg_button_secondary"
+            android:paddingHorizontal="8dp"
+            android:minWidth="0dp"
+            android:stateListAnimator="@null"
+            android:layout_marginEnd="6dp" />
+
+        <Button
+            android:id="@+id/btnBatchMode"
+            android:layout_width="wrap_content"
+            android:layout_height="36dp"
+            android:text="多选"
+            android:textSize="12sp"
+            android:textColor="@color/text_primary"
+            android:background="@drawable/bg_button_secondary"
+            android:paddingHorizontal="8dp"
+            android:minWidth="0dp"
+            android:stateListAnimator="@null"
+            android:layout_marginEnd="6dp" />
+
+        <Button
             android:id="@+id/btnSync"
             android:layout_width="36dp"
             android:layout_height="36dp"
@@ -98,6 +138,42 @@
             android:padding="8dp"
             android:stateListAnimator="@null" />
     </LinearLayout>
+
+    <!-- 批量管理操作栏（多选模式下展示） -->
+    <HorizontalScrollView
+        android:id="@+id/layoutBatchBar"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:scrollbars="none"
+        android:background="@drawable/bg_selection_bar"
+        android:layout_marginBottom="10dp"
+        android:visibility="gone">
+
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="40dp"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:paddingHorizontal="8dp">
+
+            <TextView
+                android:id="@+id/tvBatchCount"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="已选 0 篇"
+                android:textSize="12sp"
+                android:textStyle="bold"
+                android:textColor="@color/text_primary"
+                android:paddingHorizontal="8dp" />
+
+            <Button android:id="@+id/btnBatchSelectAll" style="@style/SelectionAction" android:text="全选" />
+            <Button android:id="@+id/btnBatchMoveFolder" style="@style/SelectionAction" android:text="移动文件夹" />
+            <Button android:id="@+id/btnBatchAddTags" style="@style/SelectionAction" android:text="批量标签" />
+            <Button android:id="@+id/btnBatchStar" style="@style/SelectionAction" android:text="加星标" />
+            <Button android:id="@+id/btnBatchTrash" style="@style/SelectionAction" android:text="移入回收站" />
+            <Button android:id="@+id/btnBatchExit" style="@style/SelectionAction" android:text="退出多选" />
+        </LinearLayout>
+    </HorizontalScrollView>
 
     <!-- 搜索输入栏 -->
     <LinearLayout
@@ -156,7 +232,7 @@
             android:layout_width="0dp"
             android:layout_height="match_parent"
             android:layout_weight="1"
-            android:text="📑 全部"
+            android:text="📑 全部书架"
             android:textSize="12sp"
             android:stateListAnimator="@null"
             android:background="@drawable/bg_chip_selected"
@@ -167,7 +243,7 @@
             android:layout_width="0dp"
             android:layout_height="match_parent"
             android:layout_weight="1"
-            android:text="📁 目录视图"
+            android:text="📁 目录层级"
             android:textSize="12sp"
             android:stateListAnimator="@null"
             android:background="@android:color/transparent"
@@ -178,7 +254,7 @@
             android:layout_width="0dp"
             android:layout_height="match_parent"
             android:layout_weight="1"
-            android:text="🏷️ 标签视图"
+            android:text="🏷️ 标签聚合"
             android:textSize="12sp"
             android:stateListAnimator="@null"
             android:background="@android:color/transparent"

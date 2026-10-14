@@ -1,15 +1,17 @@
 package com.adnote.ink
 
 import com.adnote.model.InkPoint
+import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.max
 import kotlin.math.min
+import kotlin.math.roundToInt
 import kotlin.math.sin
 
 /**
- * 直尺：中心 (cx, cy)、方向角 angle（弧度）、长度与宽度都是页面坐标。
- * 靠近直尺边缘落笔的笔画会被吸附成贴着尺边的直线。
+ * 直尺与量角器：中心 (cx, cy)、方向角 angle（弧度）、长度与宽度都是页面坐标。
+ * 靠近直尺边缘落笔的笔画会被吸附成贴着尺边的直线；支持 15° 常用角度磁吸与实时角度读数。
  */
 data class Ruler(
     val cx: Float,
@@ -20,6 +22,15 @@ data class Ruler(
 ) {
     private val ux get() = cos(angle)
     private val uy get() = sin(angle)
+
+    /** 归一化到 [-90°, 90°] 的可读角度（度），方便在直尺中央显示实时倾角。 */
+    val angleDegrees: Float
+        get() {
+            var deg = Math.toDegrees(angle.toDouble()).toFloat() % 180f
+            if (deg > 90f) deg -= 180f
+            if (deg <= -90f) deg += 180f
+            return if (abs(deg) < 0.05f) 0f else deg
+        }
 
     /** 点在直尺坐标系下的 (沿尺方向, 法向) 分量。 */
     private fun local(x: Float, y: Float): Pair<Float, Float> {
@@ -44,6 +55,19 @@ data class Ruler(
     fun moved(dx: Float, dy: Float) = copy(cx = cx + dx, cy = cy + dy)
 
     fun rotated(delta: Float) = copy(angle = angle + delta)
+
+    /**
+     * 旋转直尺并在靠近 15° 整数倍（0°、15°、30°、45°、60°、90° 等）±[snapToleranceDeg] 度以内时自动磁吸。
+     */
+    fun withMagneticSnap(snapToleranceDeg: Float = 2.5f): Ruler {
+        val deg = Math.toDegrees(angle.toDouble()).toFloat()
+        val nearest15 = (deg / 15f).roundToInt() * 15f
+        return if (abs(deg - nearest15) <= snapToleranceDeg) {
+            copy(angle = Math.toRadians(nearest15.toDouble()).toFloat())
+        } else {
+            this
+        }
+    }
 
     /**
      * 如果笔画起点贴近某条尺边（[snapDist] 以内），返回吸附到该尺边上的直线；否则返回 null。

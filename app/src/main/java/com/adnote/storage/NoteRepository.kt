@@ -156,6 +156,58 @@ class NoteRepository(private val root: File) {
         return note
     }
 
+    /** 切换单篇笔记的星标置顶状态。 */
+    fun toggleStar(noteId: String): Note? {
+        flush()
+        val note = load(noteId) ?: return null
+        val updated = note.copy(isStarred = !note.isStarred)
+        save(updated)
+        return updated
+    }
+
+    /** 批量移动多篇笔记到目标文件夹。 */
+    fun batchMoveToFolder(noteIds: Collection<String>, targetFolder: String, now: Long = System.currentTimeMillis()): Int {
+        val cleanFolder = targetFolder.trim().trim('/').ifEmpty { Note.DEFAULT_FOLDER }
+        flush()
+        var count = 0
+        for (id in noteIds) {
+            val note = load(id) ?: continue
+            if (note.folder == cleanFolder) continue
+            save(note.copy(folder = cleanFolder, updatedAt = now))
+            count++
+        }
+        return count
+    }
+
+    /** 批量为多篇笔记追加标签。 */
+    fun batchAddTags(noteIds: Collection<String>, newTags: List<String>, now: Long = System.currentTimeMillis()): Int {
+        val cleaned = newTags.map { it.trim().removePrefix("#") }.filter { it.isNotEmpty() }.distinct()
+        if (cleaned.isEmpty()) return 0
+        flush()
+        var count = 0
+        for (id in noteIds) {
+            val note = load(id) ?: continue
+            val merged = (note.tags + cleaned).distinct()
+            if (merged == note.tags) continue
+            save(note.copy(tags = merged, updatedAt = now))
+            count++
+        }
+        return count
+    }
+
+    /** 批量设置或取消星标。 */
+    fun batchSetStarred(noteIds: Collection<String>, starred: Boolean): Int {
+        flush()
+        var count = 0
+        for (id in noteIds) {
+            val note = load(id) ?: continue
+            if (note.isStarred == starred) continue
+            save(note.copy(isStarred = starred))
+            count++
+        }
+        return count
+    }
+
     fun getNoteDir(id: String): File = File(notesDir, id)
 
     /** 笔记附件（图片、背景、录音）的本地文件；[relPath] 相对笔记目录。 */

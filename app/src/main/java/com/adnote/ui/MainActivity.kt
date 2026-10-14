@@ -1,6 +1,5 @@
 package com.adnote.ui
 
-import android.content.Context
 import android.content.Intent
 import android.os.Bundle
 import android.text.Editable
@@ -16,16 +15,18 @@ import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
+import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.adnote.R
 import com.adnote.export.RemotePaths
 import com.adnote.model.Note
-import com.adnote.storage.NoteSummary
 import com.adnote.model.PageTemplate
 import com.adnote.model.PaperPresets
 import com.adnote.model.PinLock
 import com.adnote.pen.EinkRefresher
+import com.adnote.storage.NoteSortOrder
+import com.adnote.storage.NoteSummary
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -37,11 +38,17 @@ class MainActivity : AppCompatActivity() {
 
     enum class ViewMode { ALL, FOLDERS, TAGS }
 
+    private lateinit var tvWorkspaceStats: TextView
     private lateinit var btnNewNote: Button
     private lateinit var btnImportPdf: Button
+    private lateinit var btnSort: Button
+    private lateinit var btnLayoutMode: Button
+    private lateinit var btnBatchMode: Button
     private lateinit var btnSync: Button
     private lateinit var btnRefresh: Button
     private lateinit var btnSettings: Button
+    private lateinit var layoutBatchBar: View
+    private lateinit var tvBatchCount: TextView
     private lateinit var etSearch: EditText
     private lateinit var layoutFilters: LinearLayout
     private lateinit var scrollFilters: View
@@ -61,13 +68,45 @@ class MainActivity : AppCompatActivity() {
     }
 
     private var currentViewMode = ViewMode.ALL
+    private var currentSortOrder = NoteSortOrder.UPDATED_DESC
+    private var isGridLayout = false
+    private var isBatchMode = false
+    private val selectedBatchIds = mutableSetOf<String>()
+
     private val collapsedFolders = mutableSetOf<String>()
     private val collapsedTags = mutableSetOf<String>()
 
+    private var selectedFolder: String? = null
+    private var selectedTag: String? = null
+    private var filterOnlyStarred: Boolean = false
+    private var filterOnlyPdf: Boolean = false
+    private var filterOnlyUnsynced: Boolean = false
+
     private val noteAdapter = NoteAdapter(
-        onItemClick = { item -> openNote(item) },
-        // 长按操作要改笔记本身（封面、锁、删除），这时才读取整篇笔记
-        onItemLongClick = { item -> AdNoteApp.instance.repository.load(item.id)?.let(::showNoteActions) },
+        onItemClick = { item ->
+            if (isBatchMode) {
+                toggleBatchSelection(item.id)
+            } else {
+                openNote(item)
+            }
+        },
+        onItemLongClick = { item ->
+            if (isBatchMode) {
+                toggleBatchSelection(item.id)
+            } else {
+                AdNoteApp.instance.repository.load(item.id)?.let(::showNoteActions)
+            }
+        },
+        onStarClick = { item ->
+            lifecycleScope.launch {
+                val updated = withContext(Dispatchers.IO) { AdNoteApp.instance.repository.toggleStar(item.id) }
+                reload()
+                if (updated != null) {
+                    val tip = if (updated.isStarred) "★ 已置顶收藏「${updated.title}」" else "已取消星标"
+                    Toast.makeText(this@MainActivity, tip, Toast.LENGTH_SHORT).show()
+                }
+            }
+        },
         onHeaderClick = { header ->
             if (header.isFolder) {
                 if (collapsedFolders.contains(header.key)) collapsedFolders.remove(header.key)
@@ -84,14 +123,11 @@ class MainActivity : AppCompatActivity() {
         onHeaderLongClick = { header -> if (header.isFolder) showFolderActions(header.key) },
     )
 
-    private var selectedFolder: String? = null
-    private var selectedTag: String? = null
-
-    /** 在后台读好的全部笔记；筛选、搜索都在这份列表上做，不再每按一个键就把所有笔记读一遍。 */
     private var allNotes: List<NoteSummary> = emptyList()
     private var trashCount = 0
     private var loaded = false
     private var reloadJob: kotlinx.coroutines.Job? = null
+    private var searchDebounceJob: kotlinx.coroutines.Job? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -108,7 +144,6 @@ class MainActivity : AppCompatActivity() {
         handleQuickNoteIntent(intent)
     }
 
-    /** 桌面快捷方式 / 小部件「速记」：直接新建一页并打开编辑器。 */
     private fun handleQuickNoteIntent(intent: Intent?) {
         if (intent?.action != ACTION_QUICK_NOTE) return
         intent.action = null
@@ -154,8 +189,10 @@ class MainActivity : AppCompatActivity() {
 
     private fun showNoteActions(note: Note) {
         val actions = listOf(
+            if (note.isStarred) "☆ 取消星标置顶" else "★ 设为星标置顶",
             "编辑标题、文件夹、标签",
             "设置封面颜色",
+            "进入批量多选模式",
             if (note.isLocked) "修改或解除 PIN 锁" else "用 PIN 锁定",
             "移到回收站",
         )
@@ -163,21 +200,28 @@ class MainActivity : AppCompatActivity() {
             .setTitle(note.title)
             .setItems(actions.toTypedArray()) { _, which ->
                 when (which) {
-                    0 -> showEditNoteDialog(note)
-                    1 -> showCoverDialog(note)
-                    2 -> if (note.isLocked) {
+                    0 -> lifecycleScope.launch {
+                        withContext(Dispatchers.IO) { AdNoteApp.instance.repository.toggleStar(note.id) }
+                        reload()
+                    }
+                    1 -> showEditNoteDialog(note)
+                    2 -> showCoverDialog(note)
+                    3 -> {
+                        enterBatchMode()
+                        toggleBatchSelection(note.id)
+                    }
+                    4 -> if (note.isLocked) {
                         askPin("输入当前 PIN") { pin ->
                             if (PinLock.verify(pin, note.lockHash)) showSetPinDialog(note, allowRemove = true)
                             else Toast.makeText(this, "PIN 不正确", Toast.LENGTH_SHORT).show()
                         }
                     } else showSetPinDialog(note, allowRemove = false)
-                    3 -> showDeleteNoteDialog(note)
+                    5 -> showDeleteNoteDialog(note)
                 }
             }
             .show()
     }
 
-    /** 与编辑器里的「编辑笔记属性」相同的表单，改完直接落盘并刷新列表。 */
     private fun showEditNoteDialog(note: Note) {
         val dialogView = layoutInflater.inflate(R.layout.dialog_edit_note, null)
         val etTitle = dialogView.findViewById<EditText>(R.id.etDialogTitle)
@@ -297,7 +341,6 @@ class MainActivity : AppCompatActivity() {
         AdNoteApp.instance.onSyncFinished = null
     }
 
-    /** 在后台重新读取全部笔记（打开的笔记还没写完的保存也会读到最新版本），然后刷新列表和筛选条。 */
     private fun reload() {
         reloadJob?.cancel()
         reloadJob = lifecycleScope.launch {
@@ -306,17 +349,32 @@ class MainActivity : AppCompatActivity() {
             allNotes = notes
             trashCount = trash
             loaded = true
+            updateWorkspaceStats()
             refreshNotes()
             refreshFilters()
         }
     }
 
+    private fun updateWorkspaceStats() {
+        val totalNotes = allNotes.size
+        val totalPages = allNotes.sumOf { it.pageCount }
+        val dirtyCount = allNotes.count { it.isDirty }
+        val syncText = if (dirtyCount > 0) "$dirtyCount 篇待同步" else "全部已同步"
+        tvWorkspaceStats.text = "墨水屏手写 · Obsidian 互联 · 共 $totalNotes 篇 / $totalPages 页 · $syncText"
+    }
+
     private fun initViews() {
+        tvWorkspaceStats = findViewById(R.id.tvWorkspaceStats)
         btnNewNote = findViewById(R.id.btnNewNote)
         btnImportPdf = findViewById(R.id.btnImportPdf)
+        btnSort = findViewById(R.id.btnSort)
+        btnLayoutMode = findViewById(R.id.btnLayoutMode)
+        btnBatchMode = findViewById(R.id.btnBatchMode)
         btnSync = findViewById(R.id.btnSync)
         btnRefresh = findViewById(R.id.btnRefresh)
         btnSettings = findViewById(R.id.btnSettings)
+        layoutBatchBar = findViewById(R.id.layoutBatchBar)
+        tvBatchCount = findViewById(R.id.tvBatchCount)
         etSearch = findViewById(R.id.etSearch)
         btnClearSearch = findViewById(R.id.btnClearSearch)
         btnViewAll = findViewById(R.id.btnViewAll)
@@ -327,53 +385,204 @@ class MainActivity : AppCompatActivity() {
         rvNotes = findViewById(R.id.rvNotes)
         layoutEmpty = findViewById(R.id.layoutEmpty)
 
-        rvNotes.layoutManager = LinearLayoutManager(this)
+        applyLayoutManager()
         rvNotes.adapter = noteAdapter
     }
 
+    private fun applyLayoutManager() {
+        btnLayoutMode.text = if (isGridLayout) "列表" else "网格"
+        if (isGridLayout && currentViewMode == ViewMode.ALL) {
+            val cols = if (resources.configuration.screenWidthDp >= 720) 3 else 2
+            rvNotes.layoutManager = GridLayoutManager(this, cols)
+        } else {
+            rvNotes.layoutManager = LinearLayoutManager(this)
+        }
+    }
+
     private fun setupListeners() {
-        btnNewNote.setOnClickListener {
-            showNewNoteDialog()
+        btnNewNote.setOnClickListener { showNewNoteDialog() }
+        btnImportPdf.setOnClickListener { openPdfLauncher.launch(arrayOf("application/pdf")) }
+        btnSort.setOnClickListener { showSortDialog() }
+        btnLayoutMode.setOnClickListener {
+            isGridLayout = !isGridLayout
+            applyLayoutManager()
+            refreshNotes()
         }
+        btnBatchMode.setOnClickListener {
+            if (isBatchMode) exitBatchMode() else enterBatchMode()
+        }
+        btnSync.setOnClickListener { triggerSync() }
+        btnRefresh.setOnClickListener { EinkRefresher.fullRefresh(window.decorView) }
+        btnSettings.setOnClickListener { startActivity(Intent(this, SettingsActivity::class.java)) }
 
-        btnImportPdf.setOnClickListener {
-            openPdfLauncher.launch(arrayOf("application/pdf"))
+        findViewById<View>(R.id.btnBatchSelectAll).setOnClickListener {
+            if (selectedBatchIds.size >= allNotes.size) selectedBatchIds.clear()
+            else selectedBatchIds.addAll(allNotes.map { it.id })
+            updateBatchBar()
+            refreshNotes()
         }
-
-        btnSync.setOnClickListener {
-            triggerSync()
+        findViewById<View>(R.id.btnBatchMoveFolder).setOnClickListener { showBatchMoveFolderDialog() }
+        findViewById<View>(R.id.btnBatchAddTags).setOnClickListener { showBatchAddTagsDialog() }
+        findViewById<View>(R.id.btnBatchStar).setOnClickListener {
+            if (selectedBatchIds.isEmpty()) return@setOnClickListener
+            lifecycleScope.launch {
+                val n = withContext(Dispatchers.IO) { AdNoteApp.instance.repository.batchSetStarred(selectedBatchIds, true) }
+                exitBatchMode()
+                reload()
+                Toast.makeText(this@MainActivity, "已将 $n 篇笔记设为星标置顶", Toast.LENGTH_SHORT).show()
+            }
         }
-
-        btnRefresh.setOnClickListener {
-            EinkRefresher.fullRefresh(window.decorView)
-        }
-
-        btnSettings.setOnClickListener {
-            startActivity(Intent(this, SettingsActivity::class.java))
-        }
+        findViewById<View>(R.id.btnBatchTrash).setOnClickListener { showBatchTrashDialog() }
+        findViewById<View>(R.id.btnBatchExit).setOnClickListener { exitBatchMode() }
 
         btnViewAll.setOnClickListener { switchViewMode(ViewMode.ALL) }
         btnViewFolders.setOnClickListener { switchViewMode(ViewMode.FOLDERS) }
         btnViewTags.setOnClickListener { switchViewMode(ViewMode.TAGS) }
 
-        btnClearSearch.setOnClickListener {
-            etSearch.setText("")
-        }
+        btnClearSearch.setOnClickListener { etSearch.setText("") }
 
         etSearch.addTextChangedListener(object : TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
                 btnClearSearch.visibility = if (s.isNullOrEmpty()) View.GONE else View.VISIBLE
-                refreshNotes()
+                // 墨水屏防频闪：输入搜索词时延迟 280ms 防抖合并刷新，避免每敲一个字整屏闪动一次
+                searchDebounceJob?.cancel()
+                searchDebounceJob = lifecycleScope.launch {
+                    kotlinx.coroutines.delay(280L)
+                    refreshNotes()
+                }
             }
             override fun afterTextChanged(s: Editable?) {}
         })
+    }
+
+    private fun showSortDialog() {
+        val orders = NoteSortOrder.entries
+        val currentIdx = orders.indexOf(currentSortOrder)
+        AlertDialog.Builder(this)
+            .setTitle("笔记排序方式（星标笔记始终优先置顶）")
+            .setSingleChoiceItems(orders.map { it.displayName }.toTypedArray(), currentIdx) { dialog, which ->
+                currentSortOrder = orders[which]
+                dialog.dismiss()
+                refreshNotes()
+            }
+            .setNegativeButton("取消", null)
+            .show()
+    }
+
+    private fun enterBatchMode() {
+        isBatchMode = true
+        selectedBatchIds.clear()
+        layoutBatchBar.visibility = View.VISIBLE
+        btnBatchMode.setBackgroundResource(R.drawable.bg_chip_selected)
+        btnBatchMode.setTextColor(getColor(R.color.white))
+        updateBatchBar()
+        refreshNotes()
+    }
+
+    private fun exitBatchMode() {
+        isBatchMode = false
+        selectedBatchIds.clear()
+        layoutBatchBar.visibility = View.GONE
+        btnBatchMode.setBackgroundResource(R.drawable.bg_button_secondary)
+        btnBatchMode.setTextColor(getColor(R.color.text_primary))
+        refreshNotes()
+    }
+
+    private fun toggleBatchSelection(noteId: String) {
+        if (!selectedBatchIds.add(noteId)) selectedBatchIds.remove(noteId)
+        updateBatchBar()
+        refreshNotes()
+    }
+
+    private fun updateBatchBar() {
+        tvBatchCount.text = "已选 ${selectedBatchIds.size} 篇"
+    }
+
+    private fun showBatchMoveFolderDialog() {
+        if (selectedBatchIds.isEmpty()) {
+            Toast.makeText(this, "请先勾选要移动的笔记", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val input = EditText(this).apply {
+            setText(selectedFolder ?: Note.DEFAULT_FOLDER)
+            hint = getString(R.string.note_folder_hint)
+        }
+        AlertDialog.Builder(this)
+            .setTitle("批量移动 ${selectedBatchIds.size} 篇笔记到文件夹")
+            .setView(input)
+            .setPositiveButton("移动") { _, _ ->
+                val target = input.text.toString().trim().trim('/').ifEmpty { Note.DEFAULT_FOLDER }
+                val ids = selectedBatchIds.toList()
+                lifecycleScope.launch {
+                    val moved = withContext(Dispatchers.IO) { AdNoteApp.instance.repository.batchMoveToFolder(ids, target) }
+                    exitBatchMode()
+                    reload()
+                    Toast.makeText(this@MainActivity, "已移动 $moved 篇笔记到「$target」", Toast.LENGTH_SHORT).show()
+                }
+            }
+            .setNegativeButton("取消", null)
+            .show()
+    }
+
+    private fun showBatchAddTagsDialog() {
+        if (selectedBatchIds.isEmpty()) {
+            Toast.makeText(this, "请先勾选笔记", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val input = EditText(this).apply {
+            hint = getString(R.string.note_tags_hint)
+        }
+        AlertDialog.Builder(this)
+            .setTitle("为 ${selectedBatchIds.size} 篇笔记批量添加标签")
+            .setView(input)
+            .setPositiveButton("添加") { _, _ ->
+                val tags = input.text.toString().split(',', '，').map { it.trim().removePrefix("#") }.filter { it.isNotEmpty() }
+                if (tags.isEmpty()) return@setPositiveButton
+                val ids = selectedBatchIds.toList()
+                lifecycleScope.launch {
+                    val count = withContext(Dispatchers.IO) { AdNoteApp.instance.repository.batchAddTags(ids, tags) }
+                    exitBatchMode()
+                    reload()
+                    Toast.makeText(this@MainActivity, "已为 $count 篇笔记添加标签", Toast.LENGTH_SHORT).show()
+                }
+            }
+            .setNegativeButton("取消", null)
+            .show()
+    }
+
+    private fun showBatchTrashDialog() {
+        if (selectedBatchIds.isEmpty()) {
+            Toast.makeText(this, "请先勾选要删除的笔记", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val ids = selectedBatchIds.toList()
+        AlertDialog.Builder(this)
+            .setTitle("批量移入回收站？")
+            .setMessage("选中的 ${ids.size} 篇笔记将移入回收站，30 天内可随时恢复。")
+            .setPositiveButton("移入回收站") { _, _ ->
+                lifecycleScope.launch {
+                    withContext(Dispatchers.IO) {
+                        val repo = AdNoteApp.instance.repository
+                        for (id in ids) {
+                            val n = repo.load(id) ?: continue
+                            repo.moveToTrash(n, RemotePaths.inkDir(n))
+                        }
+                    }
+                    exitBatchMode()
+                    reload()
+                    Toast.makeText(this@MainActivity, "已将 ${ids.size} 篇笔记移入回收站", Toast.LENGTH_SHORT).show()
+                }
+            }
+            .setNegativeButton("取消", null)
+            .show()
     }
 
     private fun switchViewMode(mode: ViewMode) {
         if (currentViewMode == mode) return
         currentViewMode = mode
         updateViewModeButtons()
+        applyLayoutManager()
         scrollFilters.visibility = if (mode == ViewMode.ALL) View.VISIBLE else View.GONE
         refreshNotes()
     }
@@ -401,7 +610,11 @@ class MainActivity : AppCompatActivity() {
             allNotes,
             query = query,
             tag = if (currentViewMode == ViewMode.ALL) selectedTag else null,
-            folder = if (currentViewMode == ViewMode.ALL) selectedFolder else null
+            folder = if (currentViewMode == ViewMode.ALL) selectedFolder else null,
+            onlyStarred = if (currentViewMode == ViewMode.ALL) filterOnlyStarred else false,
+            onlyPdf = if (currentViewMode == ViewMode.ALL) filterOnlyPdf else false,
+            onlyUnsynced = if (currentViewMode == ViewMode.ALL) filterOnlyUnsynced else false,
+            sortOrder = currentSortOrder,
         )
 
         val items = when (currentViewMode) {
@@ -465,31 +678,70 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        noteAdapter.submitList(items)
-        // 第一次读完之前不显示「还没有笔记」
+        noteAdapter.submitList(items, isBatchMode, selectedBatchIds)
         layoutEmpty.visibility = if (loaded && items.isEmpty()) View.VISIBLE else View.GONE
+    }
+
+    private fun clearQuickFilters() {
+        selectedFolder = null
+        selectedTag = null
+        filterOnlyStarred = false
+        filterOnlyPdf = false
+        filterOnlyUnsynced = false
     }
 
     private fun refreshFilters() {
         layoutFilters.removeAllViews()
 
-        // "全部" 按钮
-        val isAllSelected = selectedFolder == null && selectedTag == null
-        val btnAll = createFilterButton("全部", isAllSelected) {
-            selectedFolder = null
-            selectedTag = null
+        val isAllSelected = selectedFolder == null && selectedTag == null &&
+            !filterOnlyStarred && !filterOnlyPdf && !filterOnlyUnsynced
+        layoutFilters.addView(createFilterButton("全部 (${allNotes.size})", isAllSelected) {
+            clearQuickFilters()
             refreshFilters()
             refreshNotes()
+        })
+
+        val starredCount = allNotes.count { it.isStarred }
+        if (starredCount > 0 || filterOnlyStarred) {
+            layoutFilters.addView(createFilterButton("★ 星标 ($starredCount)", filterOnlyStarred) {
+                val next = !filterOnlyStarred
+                clearQuickFilters()
+                filterOnlyStarred = next
+                refreshFilters()
+                refreshNotes()
+            })
         }
-        layoutFilters.addView(btnAll)
+
+        val pdfCount = allNotes.count { it.isPdf }
+        if (pdfCount > 0 || filterOnlyPdf) {
+            layoutFilters.addView(createFilterButton("📄 PDF ($pdfCount)", filterOnlyPdf) {
+                val next = !filterOnlyPdf
+                clearQuickFilters()
+                filterOnlyPdf = next
+                refreshFilters()
+                refreshNotes()
+            })
+        }
+
+        val dirtyCount = allNotes.count { it.isDirty }
+        if (dirtyCount > 0 || filterOnlyUnsynced) {
+            layoutFilters.addView(createFilterButton("● 待同步 ($dirtyCount)", filterOnlyUnsynced) {
+                val next = !filterOnlyUnsynced
+                clearQuickFilters()
+                filterOnlyUnsynced = next
+                refreshFilters()
+                refreshNotes()
+            })
+        }
 
         // 文件夹按钮
         val folders = NoteSummary.foldersOf(allNotes)
         for (folder in folders) {
             val isSelected = selectedFolder == folder
             val btn = createFilterButton("📁 $folder", isSelected) {
-                selectedFolder = if (isSelected) null else folder
-                selectedTag = null
+                val next = if (isSelected) null else folder
+                clearQuickFilters()
+                selectedFolder = next
                 refreshFilters()
                 refreshNotes()
             }
@@ -501,8 +753,9 @@ class MainActivity : AppCompatActivity() {
         for (tag in tags) {
             val isSelected = selectedTag == tag
             val btn = createFilterButton("#$tag", isSelected) {
-                selectedTag = if (isSelected) null else tag
-                selectedFolder = null
+                val next = if (isSelected) null else tag
+                clearQuickFilters()
+                selectedTag = next
                 refreshFilters()
                 refreshNotes()
             }
@@ -750,6 +1003,7 @@ sealed class NoteListItem {
 class NoteAdapter(
     private val onItemClick: (NoteSummary) -> Unit,
     private val onItemLongClick: (NoteSummary) -> Unit,
+    private val onStarClick: (NoteSummary) -> Unit,
     private val onHeaderClick: (NoteListItem.Header) -> Unit,
     private val onHeaderAddClick: (String) -> Unit,
     private val onHeaderLongClick: (NoteListItem.Header) -> Unit,
@@ -761,10 +1015,14 @@ class NoteAdapter(
     }
 
     private var items: List<NoteListItem> = emptyList()
+    private var batchMode: Boolean = false
+    private var selectedIds: Set<String> = emptySet()
     private val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault())
 
-    fun submitList(list: List<NoteListItem>) {
+    fun submitList(list: List<NoteListItem>, batchMode: Boolean = false, selectedIds: Set<String> = emptySet()) {
         items = list
+        this.batchMode = batchMode
+        this.selectedIds = selectedIds.toSet()
         notifyDataSetChanged()
     }
 
@@ -814,9 +1072,12 @@ class NoteAdapter(
     }
 
     inner class NoteViewHolder(view: View) : RecyclerView.ViewHolder(view) {
+        private val tvBatchCheck: TextView = view.findViewById(R.id.tvBatchCheck)
         private val tvTitle: TextView = view.findViewById(R.id.tvTitle)
         private val tvPdfBadge: TextView = view.findViewById(R.id.tvPdfBadge)
         private val tvSyncBadge: TextView = view.findViewById(R.id.tvSyncBadge)
+        private val btnStar: TextView = view.findViewById(R.id.btnStar)
+        private val tvSnippet: TextView = view.findViewById(R.id.tvSnippet)
         private val tvFolder: TextView = view.findViewById(R.id.tvFolder)
         private val tvPageCount: TextView = view.findViewById(R.id.tvPageCount)
         private val tvDate: TextView = view.findViewById(R.id.tvDate)
@@ -824,12 +1085,32 @@ class NoteAdapter(
         private val viewCover: View = view.findViewById(R.id.viewCover)
 
         fun bind(note: NoteSummary) {
-            tvTitle.text = if (note.isLocked) "🔒 ${note.title}" else note.title
+            tvBatchCheck.visibility = if (batchMode) View.VISIBLE else View.GONE
+            if (batchMode) {
+                tvBatchCheck.text = if (note.id in selectedIds) "☑" else "☐"
+            }
+
+            tvTitle.text = buildString {
+                if (note.isStarred) append("★ ")
+                if (note.isLocked) append("🔒 ")
+                append(note.title)
+            }
+            btnStar.text = if (note.isStarred) "★" else "☆"
+            btnStar.setOnClickListener { onStarClick(note) }
+
             val cover = note.coverColor
             viewCover.visibility = if (cover != null) View.VISIBLE else View.GONE
             if (cover != null) viewCover.setBackgroundColor(StrokePainter.parseColor(cover))
             tvPdfBadge.visibility = if (note.isPdf) View.VISIBLE else View.GONE
             tvFolder.text = note.folder
+
+            if (!note.isLocked && note.snippet.isNotBlank()) {
+                tvSnippet.visibility = View.VISIBLE
+                tvSnippet.text = note.snippet
+            } else {
+                tvSnippet.visibility = View.GONE
+            }
+
             val pageProgress = if (note.pageCount > 1 && note.lastPageIndex > 0) {
                 "共 ${note.pageCount} 页 · 读至第 ${note.lastPageIndex + 1} 页"
             } else {

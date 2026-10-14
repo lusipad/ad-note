@@ -2,9 +2,9 @@ package com.adnote.model
 
 import kotlinx.serialization.Serializable
 
-/** 编辑器当前工具。 */
+/** 编辑器当前工具：涵盖书写、荧光笔、橡皮、套索、几何形状、文字框、激光教鞭与记忆遮挡胶带。 */
 @Serializable
-enum class Tool { PEN, HIGHLIGHTER, ERASER, LASSO, SHAPE, TEXT }
+enum class Tool { PEN, HIGHLIGHTER, ERASER, LASSO, SHAPE, TEXT, LASER, TAPE }
 
 /** 橡皮擦模式。 */
 @Serializable
@@ -64,11 +64,16 @@ data class ToolState(
     /** 文字工具的字号（页面像素）与颜色。 */
     val textSize: Float = 40f,
     val textColor: String = PenPresets.BLACK.hex,
+    /** 记忆胶带（遮挡条）的颜色与高度。 */
+    val tapeColor: String = "#FACC15",
+    val tapeHeight: Float = 36f,
+    /** 激光笔颜色。 */
+    val laserColor: String = "#EF4444",
     /** 笔工具的最近使用颜色，工具栏上的快捷色板。 */
     val recentPenColors: List<String> = listOf(
         PenPresets.BLACK.hex, PenPresets.BLUE.hex, PenPresets.RED.hex, PenPresets.GREEN.hex,
     ),
-    /** 快捷画笔预设槽位（3个预设位，支持一键切换与长按保存）。 */
+    /** 快捷画笔预设槽位（支持一键切换与长按保存）。 */
     val presets: List<PenPreset> = listOf(
         PenPreset(tool = Tool.PEN, penType = PenType.FOUNTAIN, color = PenPresets.BLACK.hex, width = PenPresets.WIDTH_FINE, name = "1"),
         PenPreset(tool = Tool.PEN, penType = PenType.BALLPOINT, color = PenPresets.RED.hex, width = PenPresets.WIDTH_MEDIUM, name = "2"),
@@ -135,10 +140,20 @@ data class ToolState(
         list[index] = current
         return copy(presets = list)
     }
+
     /** 当前书写工具实际使用的笔型。 */
     val activePen: PenType get() = if (tool == Tool.HIGHLIGHTER) PenType.HIGHLIGHTER else penType
-    val activeColor: String get() = if (tool == Tool.HIGHLIGHTER) highlighterColor else penColor
-    val activeWidth: Float get() = if (tool == Tool.HIGHLIGHTER) highlighterWidth else penWidth
+    val activeColor: String get() = when (tool) {
+        Tool.HIGHLIGHTER -> highlighterColor
+        Tool.TAPE -> tapeColor
+        Tool.LASER -> laserColor
+        else -> penColor
+    }
+    val activeWidth: Float get() = when (tool) {
+        Tool.HIGHLIGHTER -> highlighterWidth
+        Tool.TAPE -> tapeHeight
+        else -> penWidth
+    }
 
     /** 按当前工具生成一条笔画。 */
     fun newStroke(points: List<InkPoint>): Stroke =
@@ -178,5 +193,6 @@ enum class StylusButtonAction(val displayName: String) {
     ERASER("橡皮擦"),
     LASSO("套索选择"),
     HIGHLIGHTER("荧光笔"),
+    LASER("激光笔"),
     NONE("不处理（照常书写）"),
 }
