@@ -13,6 +13,8 @@
     <application
         android:name=".ui.AdNoteApp"
         android:label="AdNote"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher_round"
         android:theme="@style/Theme.AdNote"
         android:supportsRtl="true"
         android:allowBackup="true"

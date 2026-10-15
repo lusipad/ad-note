@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- 笔记本卡片底层阴影 (Subtle Card Base) -->
+    <path
+        android:fillColor="#1E293B"
+        android:pathData="M31,23 L77,23 A7,7 0 0,1 84,30 L84,80 A7,7 0 0,1 77,87 L31,87 A7,7 0 0,1 24,80 L24,30 A7,7 0 0,1 31,23 Z" />
+
+    <!-- 笔记本纸张表面 (Crisp White Note Paper) -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M32,24 L76,24 A6,6 0 0,1 82,30 L82,78 A6,6 0 0,1 76,84 L32,84 A6,6 0 0,1 26,78 L26,30 A6,6 0 0,1 32,24 Z" />
+
+    <!-- 书脊装订区 (Book Spine Accent) -->
+    <path
+        android:fillColor="#334155"
+        android:pathData="M32,24 L36,24 L36,84 L32,84 A6,6 0 0,1 26,78 L26,30 A6,6 0 0,1 32,24 Z" />
+
+    <!-- 红色书签带 (Red Bookmark Ribbon) -->
+    <path
+        android:fillColor="#EF4444"
+        android:pathData="M66,21 L74,21 L74,36 L70,32 L66,36 Z" />
+
+    <!-- 底纹横线 (Ruled Note Lines) -->
+    <path
+        android:strokeColor="#CBD5E1"
+        android:strokeWidth="1.5"
+        android:strokeLineCap="round"
+        android:pathData="M43,44 L74,44 M43,54 L74,54 M43,64 L74,64 M43,74 L74,74" />
+
+    <!-- 经典钢笔尖 (Luxury Fountain Pen Nib) -->
+    <!-- 笔尖主体轮廓 -->
+    <path
+        android:fillColor="#0F172A"
+        android:pathData="M65,33 L77,45 L59,69 C57.8,70.5 55.8,70.5 54.5,69.5 L51.5,66.5 C50.5,65.2 50.5,63.2 52,62 Z" />
+
+    <!-- 笔尖金色花纹雕饰 (Gold Engraved Wing) -->
+    <path
+        android:fillColor="#F59E0B"
+        android:pathData="M63,37 L73,47 L67,55 L57,45 Z" />
+
+    <!-- 笔尖中缝与气孔 (Breather Hole & Nib Slit) -->
+    <path
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="1.2"
+        android:strokeLineCap="round"
+        android:pathData="M71,39 L54,68" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M64,48 A1.6,1.6 0 1,0 64,44.8 A1.6,1.6 0 1,0 64,48 Z" />
+
+    <!-- 笔尖书写出的手写签名感 'A' (Calligraphic Ink Monogram) -->
+    <path
+        android:strokeColor="#0F172A"
+        android:strokeWidth="2.8"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M43,74 C45,64 49,54 53,67 C54.5,71 51,74 48,74 C45,74 43,71 44,67 C46,60 55,61 62,64" />
+</vector>
