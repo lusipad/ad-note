@@ -24,12 +24,66 @@ object ShapeRecognizer {
      * 「画完停住」检测：笔尖在末端 [radius] 像素内停留至少 [holdMs] 毫秒。
      * 返回停留开始的下标（识别时只取这之前的点），未停住返回 -1。
      */
-    fun holdStartIndex(points: List<InkPoint>, holdMs: Long = 500, radius: Float = 8f): Int {
+    fun holdStartIndex(points: List<InkPoint>, holdMs: Long = 450, radius: Float = 24f): Int {
         if (points.size < 3) return -1
         val last = points.last()
         var k = points.lastIndex
         while (k > 0 && hypot(points[k - 1].x - last.x, points[k - 1].y - last.y) <= radius) k--
         return if (last.t - points[k].t >= holdMs && k >= 2) k else -1
+    }
+
+    /** 检查尾部点是否在末端聚集（静止停顿状态）。 */
+    fun isStillAtEnd(points: List<InkPoint>, radius: Float = 24f, minTailPoints: Int = 3): Boolean {
+        if (points.size < minTailPoints) return false
+        val last = points.last()
+        val tail = points.takeLast(minTailPoints)
+        return tail.all { hypot(it.x - last.x, it.y - last.y) <= radius }
+    }
+
+    /**
+     * 当处于 Draw & Hold 状态时，随着笔尖继续移动，动态以起点为锚点拉伸直线/箭头。
+     */
+    fun stretch(kind: Kind, basePoints: List<InkPoint>, currentTip: InkPoint): List<InkPoint> {
+        val start = basePoints.firstOrNull() ?: return listOf(currentTip)
+        val pressure = currentTip.pressure
+        return when (kind) {
+            Kind.LINE -> {
+                var p1 = start
+                var p2 = currentTip
+                val dx = p2.x - p1.x
+                val dy = p2.y - p1.y
+                val angleRad = abs(atan2(dy, dx))
+                if (angleRad < 0.08 || angleRad > PI - 0.08) {
+                    val avgY = (p1.y + p2.y) / 2f
+                    p1 = p1.copy(y = avgY)
+                    p2 = p2.copy(y = avgY)
+                } else if (abs(angleRad - PI / 2) < 0.08) {
+                    val avgX = (p1.x + p2.x) / 2f
+                    p1 = p1.copy(x = avgX)
+                    p2 = p2.copy(x = avgX)
+                }
+                densify(listOf(p1, p2), pressure)
+            }
+            Kind.ARROW -> {
+                val shaftLen = hypot(currentTip.x - start.x, currentTip.y - start.y)
+                if (shaftLen < 20f) return densify(listOf(start, currentTip), pressure)
+                val angle = atan2(currentTip.y - start.y, currentTip.x - start.x)
+                val headLen = (shaftLen * 0.18f).coerceIn(16f, 48f)
+                val wingAngle = (PI * 0.82).toFloat()
+                val wing1 = InkPoint(
+                    currentTip.x + headLen * cos(angle + wingAngle),
+                    currentTip.y + headLen * sin(angle + wingAngle),
+                    pressure,
+                )
+                val wing2 = InkPoint(
+                    currentTip.x + headLen * cos(angle - wingAngle),
+                    currentTip.y + headLen * sin(angle - wingAngle),
+                    pressure,
+                )
+                densify(listOf(start, currentTip, wing1, currentTip, wing2), pressure)
+            }
+            else -> basePoints
+        }
     }
 
     fun recognize(input: List<InkPoint>): Result? {
@@ -45,11 +99,27 @@ object ShapeRecognizer {
         val chord = hypot(last.x - first.x, last.y - first.y)
         val pathLen = pathLength(pts)
 
-        // 直线：所有点贴近首尾连线，且路径长度接近弦长
-        if (chord > 0.8f * diag && chord > 0.85f * pathLen) {
+        // 直线：所有点贴近首尾连线，且路径长度接近弦长，带水平/垂直智能吸附
+        if (chord > 0.75f * diag && chord > 0.80f * pathLen) {
             val maxDev = pts.maxOf { Eraser.distToSegment(it, first, last) }
-            if (maxDev < max(0.06f * chord, 5f)) {
-                return Result(Kind.LINE, densify(listOf(first, last), pressure))
+            if (maxDev < max(0.08f * chord, 7f)) {
+                var p1 = first
+                var p2 = last
+                val dx = p2.x - p1.x
+                val dy = p2.y - p1.y
+                val angleRad = abs(atan2(dy, dx))
+                // 水平吸附 (近 0° 或 180°，容差约 4.5°)
+                if (angleRad < 0.08 || angleRad > PI - 0.08) {
+                    val avgY = (p1.y + p2.y) / 2f
+                    p1 = p1.copy(y = avgY)
+                    p2 = p2.copy(y = avgY)
+                } else if (abs(angleRad - PI / 2) < 0.08) {
+                    // 垂直吸附 (近 90°，容差约 4.5°)
+                    val avgX = (p1.x + p2.x) / 2f
+                    p1 = p1.copy(x = avgX)
+                    p2 = p2.copy(x = avgX)
+                }
+                return Result(Kind.LINE, densify(listOf(p1, p2), pressure))
             }
         }
 

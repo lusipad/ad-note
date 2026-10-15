@@ -73,9 +73,20 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.Locale
+import android.os.SystemClock
+import android.view.HapticFeedbackConstants
+import kotlin.math.hypot
 import kotlin.math.roundToInt
 
 class EditorActivity : AppCompatActivity() {
+
+    // Draw & Hold (智能几何停顿自动吸附) 状态
+    private var shapeHoldJob: Runnable? = null
+    private var holdSnappedResult: ShapeRecognizer.Result? = null
+    private var holdBasePoints: List<InkPoint>? = null
+    private var holdSnappedStroke: Stroke? = null
+    private var lastPenMoveUptime: Long = 0L
+    private var lastPenMovePoint: InkPoint? = null
 
     private lateinit var note: Note
     private var currentPageIndex: Int = 0
@@ -455,7 +466,15 @@ class EditorActivity : AppCompatActivity() {
         val listener = object : PenInputListener {
             override fun onPenDown() {
                 inkCanvas.setPenDown(true)
-                // 橡皮大小预览还没消失就落笔：直接去掉，不能在书写中途暂停直绘
+                val now = SystemClock.uptimeMillis()
+                lastPenMoveUptime = now
+                lastPenMovePoint = null
+                holdSnappedResult = null
+                holdBasePoints = null
+                holdSnappedStroke = null
+                shapeHoldJob?.let { handler.removeCallbacks(it) }
+                shapeHoldJob = null
+
                 if (eraserPreviewShown) {
                     eraserPreviewShown = false
                     handler.removeCallbacks(hideEraserPreview)
@@ -464,10 +483,62 @@ class EditorActivity : AppCompatActivity() {
             }
 
             override fun onDrawing(points: List<InkPoint>) {
-                if (points.isEmpty()) inkCanvas.setPenDown(false)
+                if (points.isEmpty()) {
+                    inkCanvas.setPenDown(false)
+                    shapeHoldJob?.let { handler.removeCallbacks(it) }
+                    shapeHoldJob = null
+                    holdSnappedResult = null
+                    holdBasePoints = null
+                    holdSnappedStroke = null
+                }
                 val pts = inkCanvas.toPage(points)
                 when (tools.tool) {
-                    Tool.PEN, Tool.HIGHLIGHTER, Tool.SHAPE, Tool.TAPE ->
+                    Tool.PEN, Tool.HIGHLIGHTER -> {
+                        if (pts.isEmpty() || !startsOnPage(pts)) {
+                            inkCanvas.setTransientStroke(null)
+                            return
+                        }
+                        if (app.shapeHold) {
+                            val snapped = holdSnappedResult
+                            val base = holdBasePoints
+                            if (snapped != null && base != null) {
+                                // 已经吸附规整：笔尖拖动时动态以起点为锚点拉伸旋转
+                                val stretched = ShapeRecognizer.stretch(snapped.kind, base, pts.last())
+                                val dynamicStroke = newStroke(stretched)
+                                holdSnappedStroke = dynamicStroke
+                                inkCanvas.setTransientStroke(dynamicStroke)
+                                return
+                            }
+
+                            val now = SystemClock.uptimeMillis()
+                            val cur = pts.last()
+                            val prev = lastPenMovePoint
+                            val density = inkCanvas.resources.displayMetrics.density
+                            val holdRadius = 18f * density
+                            if (prev == null || hypot(cur.x - prev.x, cur.y - prev.y) > holdRadius) {
+                                lastPenMovePoint = cur
+                                lastPenMoveUptime = now
+                                shapeHoldJob?.let { handler.removeCallbacks(it) }
+                                val job = Runnable {
+                                    if (inkCanvas.isPenDown() && pts.size >= 4) {
+                                        val res = ShapeRecognizer.recognize(pts)
+                                        if (res != null) {
+                                            holdSnappedResult = res
+                                            holdBasePoints = pts.toList()
+                                            val s = newStroke(res.points)
+                                            holdSnappedStroke = s
+                                            inkCanvas.setTransientStroke(s)
+                                            inkCanvas.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                                        }
+                                    }
+                                }
+                                shapeHoldJob = job
+                                handler.postDelayed(job, 420L)
+                            }
+                        }
+                        inkCanvas.setTransientStroke(newStroke(pts))
+                    }
+                    Tool.SHAPE, Tool.TAPE ->
                         inkCanvas.setTransientStroke(if (pts.isEmpty() || !startsOnPage(pts)) null else newStroke(pts))
                     Tool.LASER -> inkCanvas.addLaserTrail(pts, tools.laserColor)
                     Tool.ERASER -> liveErase(pts)
@@ -479,15 +550,31 @@ class EditorActivity : AppCompatActivity() {
             override fun onStroke(points: List<InkPoint>) {
                 inkCanvas.setPenDown(false)
                 inkCanvas.setTransientStroke(null)
+                shapeHoldJob?.let { handler.removeCallbacks(it) }
+                shapeHoldJob = null
+
                 if (points.isEmpty()) return
                 val pts = inkCanvas.toPage(points)
                 val inkTool = tools.tool == Tool.PEN || tools.tool == Tool.HIGHLIGHTER ||
                     tools.tool == Tool.SHAPE || tools.tool == Tool.TEXT || tools.tool == Tool.TAPE
                 if (inkTool && !startsOnPage(pts)) {
-                    // 从页面外的灰边落笔：不属于页面，忽略（并刷掉直绘层可能画出的痕迹）
+                    holdSnappedResult = null
+                    holdBasePoints = null
+                    holdSnappedStroke = null
                     withPenPaused { inkCanvas.invalidate() }
                     return
                 }
+
+                // 优先检查停顿期间是否已实时吸附规整
+                val ready = holdSnappedStroke
+                holdSnappedResult = null
+                holdBasePoints = null
+                holdSnappedStroke = null
+                if (ready != null && (tools.tool == Tool.PEN || tools.tool == Tool.HIGHLIGHTER)) {
+                    commitStroke(ready, pause = true)
+                    return
+                }
+
                 when (tools.tool) {
                     Tool.PEN, Tool.HIGHLIGHTER, Tool.SHAPE -> handleInk(pts)
                     Tool.TAPE -> handleTapeStroke(pts)
@@ -987,9 +1074,15 @@ class EditorActivity : AppCompatActivity() {
         if (!replaced && tools.tool == Tool.SHAPE) {
             ShapeRecognizer.recognize(pts)?.let { pts = it.points; replaced = true }
         }
-        if (!replaced && tools.tool == Tool.PEN && app.shapeHold) {
-            val k = ShapeRecognizer.holdStartIndex(pts)
-            if (k > 0) ShapeRecognizer.recognize(pts.subList(0, k + 1))?.let { pts = it.points; replaced = true }
+        if (!replaced && (tools.tool == Tool.PEN || tools.tool == Tool.HIGHLIGHTER) && app.shapeHold) {
+            val d = com.adnote.template.TemplateLayout.density(inkCanvas.width)
+            val k = ShapeRecognizer.holdStartIndex(pts, radius = 28f * d)
+            val wallHoldMs = SystemClock.uptimeMillis() - lastPenMoveUptime
+            if (k > 0) {
+                ShapeRecognizer.recognize(pts.subList(0, k + 1))?.let { pts = it.points; replaced = true }
+            } else if (wallHoldMs >= 400L || ShapeRecognizer.isStillAtEnd(pts, radius = 28f * d)) {
+                ShapeRecognizer.recognize(pts)?.let { pts = it.points; replaced = true }
+            }
         }
         if (!replaced && tools.tool == Tool.PEN && app.scratchOut) {
             val p = page()

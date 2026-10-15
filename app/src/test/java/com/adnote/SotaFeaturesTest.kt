@@ -129,4 +129,23 @@ class SotaFeaturesTest {
         val lockedNote = openNote.copy(lockHash = "locked_hash")
         assertEquals("", lockedNote.snippetPreview())
     }
+
+    @Test
+    fun drawAndHoldSmartShapeRecognitionAndDynamicStretch() {
+        // 轻微倾斜的准水平线：首尾 (0, 100) -> (300, 103)
+        val wobblyH = (0..30).map { i ->
+            InkPoint(i * 10f, 100f + (if (i % 2 == 0) 1.5f else -1.5f) + i * 0.1f, 0.6f)
+        }
+        val recognized = ShapeRecognizer.recognize(wobblyH)
+        assertNotNull(recognized)
+        assertEquals(ShapeRecognizer.Kind.LINE, recognized!!.kind)
+        // 智能水平吸附：两端 y 坐标完全一致
+        assertEquals(recognized.points.first().y, recognized.points.last().y, 0.001f)
+
+        // 动态拉伸：笔尖拖拽到 (450, 103) 时自动动态延长
+        val stretched = ShapeRecognizer.stretch(recognized.kind, recognized.points, InkPoint(450f, 103f, 0.6f))
+        assertEquals(0f, stretched.first().x, 0.01f)
+        assertEquals(450f, stretched.last().x, 0.01f)
+        assertEquals(stretched.first().y, stretched.last().y, 0.001f)
+    }
 }

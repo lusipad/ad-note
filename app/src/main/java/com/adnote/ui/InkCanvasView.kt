@@ -634,6 +634,8 @@ class InkCanvasView @JvmOverloads constructor(
         lastPenTime = android.os.SystemClock.uptimeMillis()
     }
 
+    fun isPenDown(): Boolean = penDown
+
     fun notePenNear() {
         lastPenTime = android.os.SystemClock.uptimeMillis()
     }
