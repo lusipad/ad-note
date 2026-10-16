@@ -55,6 +55,9 @@ class AudioPlayer {
     var playingPath: String? = null
         private set
 
+    val currentPositionMs: Long
+        get() = runCatching { player?.currentPosition?.toLong() }.getOrNull() ?: 0L
+
     fun play(file: File, key: String, onDone: () -> Unit) {
         stop()
         val p = MediaPlayer()

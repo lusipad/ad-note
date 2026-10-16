@@ -111,15 +111,16 @@ class InkCanvasView @JvmOverloads constructor(
 
     private val overlayStroke = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
-        color = Color.parseColor("#374151")
+        color = Color.parseColor("#09090B")
     }
     private val handleFill = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.FILL
-        color = Color.parseColor("#111827")
+        color = Color.parseColor("#09090B")
     }
+    // 墨水屏零残影直尺：使用纯白不透明填充替代半透明灰，彻底消灭平移/旋转时的灰色泥泞拖尾
     private val rulerFill = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.FILL
-        color = Color.parseColor("#38A1A1AA")
+        color = Color.WHITE
     }
     private val badgeTextPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.WHITE
@@ -134,10 +135,10 @@ class InkCanvasView @JvmOverloads constructor(
     private val minimapPaint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val overlayPath = Path()
 
-    /** 墨水屏防频闪：不做 40ms 逐帧 Alpha 渐变动画，抬笔静止 900ms 后一次性清除激光轨迹（仅 1 次重绘）。 */
+    /** 墨水屏防频闪：不做 40ms 逐帧 Alpha 渐变动画，抬笔静止 900ms 后一次性清除激光轨迹并触发局部灰阶刷新。 */
     private val laserCleanupRunnable = Runnable {
         laserTrails.clear()
-        invalidate()
+        doAfterNextDraw { com.adnote.pen.EinkRefresher.refreshCanvasPartial(this) }
     }
 
     // region 公共接口
@@ -303,6 +304,33 @@ class InkCanvasView @JvmOverloads constructor(
         applyViewport(viewport.reset(), notify = true)
     }
 
+    /** 墨水屏分档瞬时缩放（100% / 125% / 150% / 200%），避免双指连续捏合产生多帧残影。 */
+    fun setDiscreteZoom(targetZoom: Float) {
+        val current = viewport.zoom
+        if (abs(current - targetZoom) < 0.02f) return
+        val factor = targetZoom / current.coerceAtLeast(0.1f)
+        val next = if (targetZoom <= 1.01f) {
+            viewport.reset()
+        } else {
+            viewport.zoomBy(factor, width / 2f, height / 2f)
+        }
+        applyViewport(next, notify = true)
+        doAfterNextDraw { com.adnote.pen.EinkRefresher.refreshCanvasPartial(this) }
+    }
+
+    /** 获取小地图在屏幕坐标系中的矩形区域（供文石 TouchHelper 加入排除区，使手写笔可直接点击小地图导航）。 */
+    fun getMinimapScreenRect(): android.graphics.Rect? {
+        if (!viewport.isZoomed || minimapRect.isEmpty) return null
+        val loc = IntArray(2)
+        getLocationOnScreen(loc)
+        return android.graphics.Rect(
+            loc[0] + minimapRect.left.toInt(),
+            loc[1] + minimapRect.top.toInt(),
+            loc[0] + minimapRect.right.toInt(),
+            loc[1] + minimapRect.bottom.toInt(),
+        )
+    }
+
     private val afterDrawActions = ArrayList<Runnable>()
 
     fun doAfterNextDraw(action: Runnable) {
@@ -444,7 +472,14 @@ class InkCanvasView @JvmOverloads constructor(
         val selPage = previewPage ?: selectionPage
         if (selPage != null && !selection.isEmpty) {
             renderer.drawContent(canvas, selPage)
-            SelectionOps.bounds(selPage, selection)?.let { drawSelectionFrame(canvas, it, scale) }
+            SelectionOps.bounds(selPage, selection)?.let { b ->
+                val tf = previewTransform
+                if (tf != null) {
+                    drawTransformedWireframe(canvas, b, tf, scale)
+                } else {
+                    drawSelectionFrame(canvas, b, scale)
+                }
+            }
         }
 
         transientStroke?.let { s ->
@@ -486,8 +521,8 @@ class InkCanvasView @JvmOverloads constructor(
 
         canvas.restore()
 
-        // 墨水屏优化：手势拖拽中途不重绘小地图，仅在手势静止（!gesturing）且放大超过 120% 时静态显示
-        if (!gesturing && viewport.zoom > 1.20f) {
+        // 墨水屏优化：手势拖拽中途不重绘小地图，仅在手势静止（!gesturing）且放大超过 115% 时静态显示
+        if (!gesturing && viewport.zoom > 1.15f) {
             drawMinimap(canvas)
         } else if (!viewport.isZoomed) {
             minimapRect.setEmpty()
@@ -512,14 +547,14 @@ class InkCanvasView @JvmOverloads constructor(
         val top = height - mapH - margin
         minimapRect.set(left, top, left + mapW, top + mapH)
 
-        // 背景与边框
+        // 墨水屏高对比纯白背景与 2dp 纯黑实线边框（消除半透明灰雾）
         minimapPaint.style = Paint.Style.FILL
-        minimapPaint.color = Color.parseColor("#E6FFFFFF")
-        canvas.drawRoundRect(minimapRect, 6f * density, 6f * density, minimapPaint)
+        minimapPaint.color = Color.WHITE
+        canvas.drawRoundRect(minimapRect, 4f * density, 4f * density, minimapPaint)
         minimapPaint.style = Paint.Style.STROKE
-        minimapPaint.strokeWidth = 1.2f * density
-        minimapPaint.color = Color.parseColor("#9CA3AF")
-        canvas.drawRoundRect(minimapRect, 6f * density, 6f * density, minimapPaint)
+        minimapPaint.strokeWidth = 1.8f * density
+        minimapPaint.color = Color.parseColor("#09090B")
+        canvas.drawRoundRect(minimapRect, 4f * density, 4f * density, minimapPaint)
 
         // 当前视口在整页中的比例框
         val vx0 = (viewport.toPageX(0f) / p.width).coerceIn(0f, 1f)
@@ -532,17 +567,14 @@ class InkCanvasView @JvmOverloads constructor(
             left + vx1 * mapW,
             top + vy1 * mapH,
         )
-        minimapPaint.style = Paint.Style.FILL
-        minimapPaint.color = Color.parseColor("#26111827")
-        canvas.drawRect(vr, minimapPaint)
         minimapPaint.style = Paint.Style.STROKE
-        minimapPaint.strokeWidth = 1.8f * density
-        minimapPaint.color = Color.parseColor("#111827")
+        minimapPaint.strokeWidth = 2.2f * density
+        minimapPaint.color = Color.parseColor("#09090B")
         canvas.drawRect(vr, minimapPaint)
     }
 
     private fun setDashed(p: Paint, scale: Float) {
-        p.strokeWidth = 1.5f * density / scale
+        p.strokeWidth = 1.8f * density / scale
         p.pathEffect = DashPathEffect(floatArrayOf(8f * density / scale, 6f * density / scale), 0f)
     }
 
@@ -561,6 +593,27 @@ class InkCanvasView @JvmOverloads constructor(
         canvas.drawCircle(cx, ry, r, handleFill)
     }
 
+    /** 墨水屏套索变换线框代理：拖拽/缩放/旋转中途仅绘制高对比变换线框与十字准星，避免每帧重算矢量曲线。 */
+    private fun drawTransformedWireframe(canvas: Canvas, b: FloatArray, tf: Affine, scale: Float) {
+        val pad = 8f * density / scale
+        val l = b[0] - pad; val t = b[1] - pad; val r = b[2] + pad; val bot = b[3] + pad
+        overlayPath.reset()
+        overlayPath.moveTo(tf.mapX(l, t), tf.mapY(l, t))
+        overlayPath.lineTo(tf.mapX(r, t), tf.mapY(r, t))
+        overlayPath.lineTo(tf.mapX(r, bot), tf.mapY(r, bot))
+        overlayPath.lineTo(tf.mapX(l, bot), tf.mapY(l, bot))
+        overlayPath.close()
+        setDashed(overlayStroke, scale)
+        canvas.drawPath(overlayPath, overlayStroke)
+        overlayStroke.pathEffect = null
+        // 中心十字准星与四角锚点
+        val mx = (l + r) / 2f; val my = (t + bot) / 2f
+        val cx = tf.mapX(mx, my); val cy = tf.mapY(mx, my)
+        val cross = 6f * density / scale
+        canvas.drawLine(cx - cross, cy, cx + cross, cy, overlayStroke)
+        canvas.drawLine(cx, cy - cross, cx, cy + cross, overlayStroke)
+    }
+
     private fun drawRuler(canvas: Canvas, r: Ruler, scale: Float) {
         val c = r.corners()
         overlayPath.reset()
@@ -569,7 +622,7 @@ class InkCanvasView @JvmOverloads constructor(
         overlayPath.close()
         canvas.drawPath(overlayPath, rulerFill)
         overlayStroke.pathEffect = null
-        overlayStroke.strokeWidth = 1.5f * density / scale
+        overlayStroke.strokeWidth = 2.0f * density / scale
         canvas.drawPath(overlayPath, overlayStroke)
         // 刻度：沿上边缘每 20 像素一格，每 100 像素一长格
         val ux = (c[1].first - c[0].first) / r.length
@@ -698,6 +751,7 @@ class InkCanvasView @JvmOverloads constructor(
                     if (mode == Mode.RULER) {
                         mode = Mode.RULER_ROTATE
                         lastAngle = angle(e)
+                        com.adnote.pen.EinkRefresher.enterFastInteractiveMode(this)
                     } else {
                         mode = Mode.PINCH
                         previewPage = null
@@ -705,6 +759,7 @@ class InkCanvasView @JvmOverloads constructor(
                         pinchStartVp = viewport
                         focusStartX = focusX(e); focusStartY = focusY(e)
                         gesturing = true
+                        com.adnote.pen.EinkRefresher.enterFastInteractiveMode(this)
                     }
                 }
             }
@@ -721,7 +776,11 @@ class InkCanvasView @JvmOverloads constructor(
                             vp.scrollsVertically -> vp.panBy(0f, y - lastY)
                             else -> vp
                         }
-                        if (next != vp) { gesturing = true; applyViewport(next, notify = false) }
+                        if (next != vp) {
+                            gesturing = true
+                            com.adnote.pen.EinkRefresher.enterFastInteractiveMode(this)
+                            applyViewport(next, notify = false)
+                        }
                     }
                     Mode.PINCH -> if (e.pointerCount >= 2) {
                         val start = pinchStartVp ?: viewport
@@ -730,10 +789,12 @@ class InkCanvasView @JvmOverloads constructor(
                         applyViewport(next, notify = false)
                     }
                     Mode.RULER -> ruler?.let {
+                        com.adnote.pen.EinkRefresher.enterFastInteractiveMode(this)
                         ruler = it.moved((x - lastX) / viewport.scale, (y - lastY) / viewport.scale)
                         invalidate()
                     }
                     Mode.RULER_ROTATE -> if (e.pointerCount >= 2) ruler?.let {
+                        com.adnote.pen.EinkRefresher.enterFastInteractiveMode(this)
                         val a = angle(e)
                         ruler = it.rotated(a - lastAngle).withMagneticSnap()
                         lastAngle = a
@@ -773,6 +834,7 @@ class InkCanvasView @JvmOverloads constructor(
             panY = targetPageY * viewport.scale - height / 2f,
         ).clamped()
         gesturing = true
+        com.adnote.pen.EinkRefresher.enterFastInteractiveMode(this)
         applyViewport(next, notify = false)
     }
 
@@ -822,7 +884,10 @@ class InkCanvasView @JvmOverloads constructor(
                 }
             }
         }
-        if (mode == Mode.RULER || mode == Mode.RULER_ROTATE) ruler?.let { listener?.onRulerMoved(it) }
+        if (mode == Mode.RULER || mode == Mode.RULER_ROTATE) {
+            com.adnote.pen.EinkRefresher.exitFastInteractiveMode(this)
+            ruler?.let { listener?.onRulerMoved(it) }
+        }
         endViewportGesture()
     }
 
@@ -834,6 +899,7 @@ class InkCanvasView @JvmOverloads constructor(
 
     private fun endViewportGesture() {
         pinchStartVp = null
+        com.adnote.pen.EinkRefresher.exitFastInteractiveMode(this)
         if (gesturing) {
             gesturing = false
             listener?.onViewportChanged(viewport)
@@ -868,14 +934,18 @@ class InkCanvasView @JvmOverloads constructor(
                         Mode.NONE
                     }
                 }
+                if (mode.isSelection()) {
+                    com.adnote.pen.EinkRefresher.enterFastInteractiveMode(this)
+                }
             }
             MotionEvent.ACTION_MOVE -> {
                 val t = selectionTransform(px, py) ?: return true
+                // 墨水屏线框代理：MOVE 阶段仅更新变换矩阵绘制高速虚线框，不执行全量矢量重算
                 previewTransform = t
-                previewPage = SelectionOps.transform(base, selection, t)
                 invalidate()
             }
             MotionEvent.ACTION_UP -> {
+                com.adnote.pen.EinkRefresher.exitFastInteractiveMode(this)
                 val t = selectionTransform(px, py)
                 val moved = hypot(px - selStartX, py - selStartY) > 2f / viewport.scale
                 previewTransform = null
@@ -888,6 +958,7 @@ class InkCanvasView @JvmOverloads constructor(
                 mode = Mode.NONE
             }
             MotionEvent.ACTION_CANCEL -> {
+                com.adnote.pen.EinkRefresher.exitFastInteractiveMode(this)
                 previewTransform = null
                 previewPage = null
                 mode = Mode.NONE

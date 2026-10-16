@@ -67,8 +67,8 @@ class AdNoteApp : Application() {
     var scratchOut: Boolean = true
         private set
 
-    /** 画完停住半秒，自动规整成直线、矩形、圆等形状。 */
-    var shapeHold: Boolean = true
+    /** 画完停住半秒，自动规整成直线、矩形、圆等形状（默认关闭，用户已有独立「形状笔」工具）。 */
+    var shapeHold: Boolean = false
         private set
 
     /** 笔身按键的作用（标准触控通道）。 */
@@ -122,7 +122,7 @@ class AdNoteApp : Application() {
         toolState = ToolState.fromJson(prefs.getString("tool_state", null))
         autoRecognize = prefs.getBoolean("auto_recognize", true)
         scratchOut = prefs.getBoolean("scratch_out", true)
-        shapeHold = prefs.getBoolean("shape_hold", true)
+        shapeHold = prefs.getBoolean("shape_hold_v2", false)
         stylusButtonAction = runCatching {
             StylusButtonAction.valueOf(prefs.getString("stylus_button", null) ?: "ERASER")
         }.getOrDefault(StylusButtonAction.ERASER)
@@ -178,7 +178,7 @@ class AdNoteApp : Application() {
 
     fun setScratchOut(v: Boolean) { scratchOut = v; prefs().edit().putBoolean("scratch_out", v).apply() }
 
-    fun setShapeHold(v: Boolean) { shapeHold = v; prefs().edit().putBoolean("shape_hold", v).apply() }
+    fun setShapeHold(v: Boolean) { shapeHold = v; prefs().edit().putBoolean("shape_hold_v2", v).apply() }
 
     fun setStylusButtonAction(v: StylusButtonAction) {
         stylusButtonAction = v

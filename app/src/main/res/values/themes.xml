@@ -6,18 +6,43 @@
         <item name="android:textColorPrimary">@color/text_primary</item>
         <item name="android:textColorSecondary">@color/text_secondary</item>
         <item name="colorPrimary">@color/brand_black</item>
-        <item name="colorPrimaryDark">@color/brand_black</item>
+        <item name="colorPrimaryDark">@color/bg_surface</item>
         <item name="colorAccent">@color/brand_black</item>
 
-        <!-- 禁用窗口切换动画，墨水屏刷新更干脆无拖影 -->
+        <!-- 墨水屏沉浸式纯白状态栏与导航栏（消除顶部黑条） -->
+        <item name="android:statusBarColor">@color/bg_surface</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:navigationBarColor">@color/bg_surface</item>
+
+        <!-- 禁用一切水波纹、阴影与窗口切换动画，墨水屏刷新干脆零残影 -->
         <item name="android:windowAnimationStyle">@style/NoAnimation</item>
         <item name="alertDialogTheme">@style/Theme.AdNote.Dialog</item>
+        <item name="android:popupMenuStyle">@style/Theme.AdNote.PopupMenu</item>
+        <item name="popupMenuStyle">@style/Theme.AdNote.PopupMenu</item>
+        <item name="android:dropDownListViewStyle">@style/Theme.AdNote.DropDownList</item>
     </style>
 
+    <!-- 墨水屏专属无遮罩、无阴影、2dp 纯黑实线边框弹窗 -->
     <style name="Theme.AdNote.Dialog" parent="Theme.AppCompat.Light.Dialog.Alert">
         <item name="colorAccent">@color/brand_black</item>
         <item name="colorPrimary">@color/brand_black</item>
         <item name="android:textColorPrimary">@color/text_primary</item>
+        <item name="android:backgroundDimEnabled">false</item>
+        <item name="android:windowElevation">0dp</item>
+        <item name="android:windowBackground">@drawable/bg_dialog_eink</item>
+        <item name="android:windowAnimationStyle">@null</item>
+    </style>
+
+    <style name="Theme.AdNote.PopupMenu" parent="Widget.AppCompat.Light.PopupMenu">
+        <item name="android:popupBackground">@drawable/bg_dialog_eink</item>
+        <item name="android:popupElevation">0dp</item>
+        <item name="android:popupAnimationStyle">@null</item>
+    </style>
+
+    <style name="Theme.AdNote.DropDownList" parent="Widget.AppCompat.Light.ListView.DropDown">
+        <item name="android:divider">@color/border_hairline</item>
+        <item name="android:dividerHeight">1dp</item>
+        <item name="android:overScrollMode">never</item>
     </style>
 
     <style name="SelectionAction">
@@ -25,9 +50,10 @@
         <item name="android:layout_height">32dp</item>
         <item name="android:layout_marginStart">4dp</item>
         <item name="android:minWidth">0dp</item>
-        <item name="android:paddingStart">12dp</item>
-        <item name="android:paddingEnd">12dp</item>
+        <item name="android:paddingStart">10dp</item>
+        <item name="android:paddingEnd">10dp</item>
         <item name="android:textSize">12sp</item>
+        <item name="android:textStyle">bold</item>
         <item name="android:textColor">@color/text_primary</item>
         <item name="android:background">@drawable/bg_button_secondary</item>
         <item name="android:stateListAnimator">@null</item>

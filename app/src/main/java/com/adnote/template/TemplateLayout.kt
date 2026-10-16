@@ -38,11 +38,11 @@ object TemplateLayout {
     }
 
     private class Palette(isDark: Boolean) {
-        val main = if (isDark) "#4B5563" else "#9CA3AF"
-        val accent = if (isDark) "#374151" else "#C4C8D0"
-        val dot = if (isDark) "#4B5563" else "#9CA3AF"
-        val marginRed = if (isDark) "#7F1D1D" else "#EF4444"
-        val strong = if (isDark) "#6B7280" else "#6B7280"
+        val main = if (isDark) "#52525B" else "#6B7280"
+        val accent = if (isDark) "#3F3F46" else "#8B929E"
+        val dot = if (isDark) "#52525B" else "#6B7280"
+        val marginRed = if (isDark) "#7F1D1D" else "#B91C1C"
+        val strong = if (isDark) "#71717A" else "#374151"
     }
 
     fun build(template: PageTemplate, backgroundHex: String, width: Int, height: Int): List<TemplateShape> {

@@ -62,6 +62,18 @@ class RawStrokeCollector {
         return out
     }
 
+    /** 获取当前进行中笔画的采样点快照（用于文石直绘期间的一笔成型静止检测）。 */
+    @Synchronized
+    fun snapshot(): List<InkPoint> {
+        if (!active) return emptyList()
+        val fromList = listPoints
+        return if (fromList != null && fromList.size >= 2) {
+            ArrayList(fromList)
+        } else {
+            ArrayList(movePoints)
+        }
+    }
+
     /** 只比较坐标：部分固件不给时间戳，两次换算出的时间会不同。 */
     private fun samePoint(a: InkPoint, b: InkPoint): Boolean = a.x == b.x && a.y == b.y
 }

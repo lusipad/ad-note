@@ -36,6 +36,14 @@ class OnyxPenInput : PenInput {
     // 整笔点列表与逐点移动回调会重复给出同一批点，由收集器去重（见 RawStrokeCollector）
     private val strokeCollector = RawStrokeCollector()
     private val eraseCollector = RawStrokeCollector()
+    private var moveDispatchPending = false
+    private val dispatchMoveRunnable = Runnable {
+        moveDispatchPending = false
+        val pts = strokeCollector.snapshot()
+        if (pts.isNotEmpty()) {
+            listener?.onDrawing(pts)
+        }
+    }
 
     override fun attach(view: View, limitRect: Rect, listener: PenInputListener) {
         this.listener = listener
@@ -43,10 +51,14 @@ class OnyxPenInput : PenInput {
         val callback = object : RawInputCallback() {
             override fun onBeginRawDrawing(b: Boolean, touchPoint: TouchPoint) {
                 strokeCollector.begin(touchPoint.toInkPoint())
+                mainHandler.removeCallbacks(dispatchMoveRunnable)
+                moveDispatchPending = false
                 mainHandler.post { this@OnyxPenInput.listener?.onPenDown() }
             }
 
             override fun onEndRawDrawing(b: Boolean, touchPoint: TouchPoint) {
+                mainHandler.removeCallbacks(dispatchMoveRunnable)
+                moveDispatchPending = false
                 val points = strokeCollector.end(touchPoint.toInkPoint())
                 // 没有对应的起笔（极少见）：当作取消，让画布结束「笔在屏幕上」的状态
                 mainHandler.post {
@@ -57,6 +69,10 @@ class OnyxPenInput : PenInput {
 
             override fun onRawDrawingTouchPointMoveReceived(touchPoint: TouchPoint) {
                 strokeCollector.move(touchPoint.toInkPoint())
+                if (!moveDispatchPending) {
+                    moveDispatchPending = true
+                    mainHandler.postDelayed(dispatchMoveRunnable, 40L)
+                }
             }
 
             override fun onRawDrawingTouchPointListReceived(touchPointList: TouchPointList) {
@@ -186,6 +202,8 @@ class OnyxPenInput : PenInput {
     }
 
     override fun detach() {
+        mainHandler.removeCallbacks(dispatchMoveRunnable)
+        moveDispatchPending = false
         runCatching {
             touchHelper?.closeRawDrawing()
             attachedView?.setOnHoverListener(null)

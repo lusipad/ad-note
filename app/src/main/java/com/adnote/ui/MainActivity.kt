@@ -58,6 +58,10 @@ class MainActivity : AppCompatActivity() {
     private lateinit var rvNotes: RecyclerView
     private lateinit var layoutEmpty: View
     private lateinit var btnClearSearch: View
+    private lateinit var layoutBookshelfPager: View
+    private lateinit var btnBookshelfPrev: Button
+    private lateinit var tvBookshelfPage: TextView
+    private lateinit var btnBookshelfNext: Button
 
     private val openPdfLauncher = registerForActivityResult(
         androidx.activity.result.contract.ActivityResultContracts.OpenDocument()
@@ -71,6 +75,8 @@ class MainActivity : AppCompatActivity() {
     private var currentSortOrder = NoteSortOrder.UPDATED_DESC
     private var isGridLayout = false
     private var isBatchMode = false
+    private var currentBookshelfPage = 0
+    private var totalBookshelfPages = 1
     private val selectedBatchIds = mutableSetOf<String>()
 
     private val collapsedFolders = mutableSetOf<String>()
@@ -384,7 +390,12 @@ class MainActivity : AppCompatActivity() {
         layoutFilters = findViewById(R.id.layoutFilters)
         rvNotes = findViewById(R.id.rvNotes)
         layoutEmpty = findViewById(R.id.layoutEmpty)
+        layoutBookshelfPager = findViewById(R.id.layoutBookshelfPager)
+        btnBookshelfPrev = findViewById(R.id.btnBookshelfPrev)
+        tvBookshelfPage = findViewById(R.id.tvBookshelfPage)
+        btnBookshelfNext = findViewById(R.id.btnBookshelfNext)
 
+        rvNotes.itemAnimator = null
         applyLayoutManager()
         rvNotes.adapter = noteAdapter
     }
@@ -405,6 +416,7 @@ class MainActivity : AppCompatActivity() {
         btnSort.setOnClickListener { showSortDialog() }
         btnLayoutMode.setOnClickListener {
             isGridLayout = !isGridLayout
+            currentBookshelfPage = 0
             applyLayoutManager()
             refreshNotes()
         }
@@ -414,6 +426,9 @@ class MainActivity : AppCompatActivity() {
         btnSync.setOnClickListener { triggerSync() }
         btnRefresh.setOnClickListener { EinkRefresher.fullRefresh(window.decorView) }
         btnSettings.setOnClickListener { startActivity(Intent(this, SettingsActivity::class.java)) }
+
+        btnBookshelfPrev.setOnClickListener { prevBookshelfPage() }
+        btnBookshelfNext.setOnClickListener { nextBookshelfPage() }
 
         findViewById<View>(R.id.btnBatchSelectAll).setOnClickListener {
             if (selectedBatchIds.size >= allNotes.size) selectedBatchIds.clear()
@@ -445,6 +460,7 @@ class MainActivity : AppCompatActivity() {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
                 btnClearSearch.visibility = if (s.isNullOrEmpty()) View.GONE else View.VISIBLE
+                currentBookshelfPage = 0
                 // 墨水屏防频闪：输入搜索词时延迟 280ms 防抖合并刷新，避免每敲一个字整屏闪动一次
                 searchDebounceJob?.cancel()
                 searchDebounceJob = lifecycleScope.launch {
@@ -678,8 +694,73 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        noteAdapter.submitList(items, isBatchMode, selectedBatchIds)
+        val pageSize = if (isGridLayout && currentViewMode == ViewMode.ALL) 8 else 6
+        totalBookshelfPages = ((items.size - 1).coerceAtLeast(0) / pageSize) + 1
+        currentBookshelfPage = currentBookshelfPage.coerceIn(0, totalBookshelfPages - 1)
+        val fromIdx = currentBookshelfPage * pageSize
+        val toIdx = (fromIdx + pageSize).coerceAtMost(items.size)
+        val pagedItems = if (items.isEmpty()) emptyList() else items.subList(fromIdx, toIdx)
+
+        noteAdapter.submitList(pagedItems, isBatchMode, selectedBatchIds)
         layoutEmpty.visibility = if (loaded && items.isEmpty()) View.VISIBLE else View.GONE
+        layoutBookshelfPager.visibility = if (items.isEmpty()) View.GONE else View.VISIBLE
+        tvBookshelfPage.text = "第 ${currentBookshelfPage + 1} / $totalBookshelfPages 页 · 共 ${filtered.size} 篇"
+        val canPrev = currentBookshelfPage > 0
+        val canNext = currentBookshelfPage < totalBookshelfPages - 1
+        btnBookshelfPrev.isEnabled = canPrev
+        btnBookshelfPrev.alpha = if (canPrev) 1f else 0.35f
+        btnBookshelfNext.isEnabled = canNext
+        btnBookshelfNext.alpha = if (canNext) 1f else 0.35f
+        rvNotes.post {
+            EinkRefresher.refreshCanvasPartial(rvNotes)
+            EinkRefresher.refreshUiControl(layoutBookshelfPager)
+        }
+    }
+
+    private fun prevBookshelfPage() {
+        if (currentBookshelfPage > 0) {
+            currentBookshelfPage--
+            refreshNotes()
+        }
+    }
+
+    private fun nextBookshelfPage() {
+        if (currentBookshelfPage < totalBookshelfPages - 1) {
+            currentBookshelfPage++
+            refreshNotes()
+        }
+    }
+
+    override fun onKeyDown(keyCode: Int, event: android.view.KeyEvent): Boolean {
+        val volumePaging = AdNoteApp.instance.volumeKeyPaging
+        when (keyCode) {
+            android.view.KeyEvent.KEYCODE_PAGE_DOWN, android.view.KeyEvent.KEYCODE_DPAD_RIGHT -> {
+                nextBookshelfPage()
+                return true
+            }
+            android.view.KeyEvent.KEYCODE_PAGE_UP, android.view.KeyEvent.KEYCODE_DPAD_LEFT -> {
+                prevBookshelfPage()
+                return true
+            }
+            android.view.KeyEvent.KEYCODE_VOLUME_DOWN -> if (volumePaging) {
+                nextBookshelfPage()
+                return true
+            }
+            android.view.KeyEvent.KEYCODE_VOLUME_UP -> if (volumePaging) {
+                prevBookshelfPage()
+                return true
+            }
+        }
+        return super.onKeyDown(keyCode, event)
+    }
+
+    override fun onKeyUp(keyCode: Int, event: android.view.KeyEvent): Boolean {
+        if (AdNoteApp.instance.volumeKeyPaging &&
+            (keyCode == android.view.KeyEvent.KEYCODE_VOLUME_DOWN || keyCode == android.view.KeyEvent.KEYCODE_VOLUME_UP)
+        ) {
+            return true
+        }
+        return super.onKeyUp(keyCode, event)
     }
 
     private fun clearQuickFilters() {
@@ -688,6 +769,7 @@ class MainActivity : AppCompatActivity() {
         filterOnlyStarred = false
         filterOnlyPdf = false
         filterOnlyUnsynced = false
+        currentBookshelfPage = 0
     }
 
     private fun refreshFilters() {

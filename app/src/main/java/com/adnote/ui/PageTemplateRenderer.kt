@@ -49,7 +49,9 @@ object PageTemplateRenderer {
         minLine: Float = 0f,
     ) {
         val paper = PaperPresets.find(backgroundColorHex)
-        canvas.drawColor(color(paper.hex))
+        val isEink = com.adnote.pen.DeviceDetector.detect().screenCategory == com.adnote.pen.ScreenCategory.EINK
+        val bgColor = if (isEink && !paper.isDark) Color.WHITE else color(paper.hex)
+        canvas.drawColor(bgColor)
         renderLines(canvas, template, backgroundColorHex, width, height, minLine)
     }
 
@@ -64,6 +66,7 @@ object PageTemplateRenderer {
         minLine: Float = 0f,
     ) {
         if (template == PageTemplate.BLANK) return
+        val floorWidth = maxOf(minLine, 1.15f)
 
         dashedPaint.pathEffect = DashPathEffect(TemplateLayout.dashIntervals(width), 0f)
         for (shape in TemplateLayout.build(template, backgroundColorHex, width, height)) {
@@ -71,17 +74,17 @@ object PageTemplateRenderer {
                 is TemplateLine -> {
                     val p = if (shape.dashed) dashedPaint else linePaint
                     p.color = color(shape.color)
-                    p.strokeWidth = maxOf(shape.width, minLine)
+                    p.strokeWidth = maxOf(shape.width, floorWidth)
                     canvas.drawLine(shape.x1, shape.y1, shape.x2, shape.y2, p)
                 }
                 is TemplateRect -> {
                     linePaint.color = color(shape.color)
-                    linePaint.strokeWidth = maxOf(shape.width, minLine)
+                    linePaint.strokeWidth = maxOf(shape.width, floorWidth)
                     canvas.drawRect(shape.left, shape.top, shape.right, shape.bottom, linePaint)
                 }
                 is TemplateDot -> {
                     fillPaint.color = color(shape.color)
-                    canvas.drawCircle(shape.cx, shape.cy, maxOf(shape.r, minLine / 2f), fillPaint)
+                    canvas.drawCircle(shape.cx, shape.cy, maxOf(shape.r, floorWidth / 2f), fillPaint)
                 }
             }
         }

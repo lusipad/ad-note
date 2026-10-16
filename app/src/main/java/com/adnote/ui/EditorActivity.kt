@@ -125,6 +125,8 @@ class EditorActivity : AppCompatActivity() {
     private lateinit var dividerDockLeft: View
     private lateinit var dividerDockRight: View
     private lateinit var dividerToolTop: View
+    private lateinit var layoutPenPropertyBar: View
+    private lateinit var dividerPenProperty: View
     private lateinit var layoutToolBarContent: LinearLayout
     private lateinit var layoutPenPresets: LinearLayout
 
@@ -188,6 +190,22 @@ class EditorActivity : AppCompatActivity() {
     private val saveRunnable = Runnable { saveNow() }
 
     private val player = AudioPlayer()
+    private var activePlaybackRecording: Recording? = null
+    private val playbackSyncTicker = object : Runnable {
+        override fun run() {
+            val rec = activePlaybackRecording
+            if (rec == null || player.playingPath != rec.id) {
+                activePlaybackRecording = null
+                inkCanvas.setPlaybackCutoff(null)
+                EinkRefresher.refreshCanvasPartial(inkCanvas)
+                return
+            }
+            val cutoff = rec.createdAt - rec.durationMs + player.currentPositionMs
+            inkCanvas.setPlaybackCutoff(cutoff)
+            EinkRefresher.refreshCanvasPartial(inkCanvas)
+            handler.postDelayed(this, 500L)
+        }
+    }
     private val recordTicker = object : Runnable {
         override fun run() {
             val active = RecordingSession.active ?: return
@@ -258,6 +276,8 @@ class EditorActivity : AppCompatActivity() {
         dividerDockLeft = findViewById(R.id.dividerDockLeft)
         dividerDockRight = findViewById(R.id.dividerDockRight)
         dividerToolTop = findViewById(R.id.dividerToolTop)
+        layoutPenPropertyBar = findViewById(R.id.layoutPenPropertyBar)
+        dividerPenProperty = findViewById(R.id.dividerPenProperty)
         layoutToolBarContent = findViewById(R.id.layoutToolBarContent)
         layoutPenPresets = findViewById(R.id.layoutPenPresets)
 
@@ -387,7 +407,20 @@ class EditorActivity : AppCompatActivity() {
         findViewById<View>(R.id.btnLayers).setOnClickListener { showLayersDialog() }
         btnRecord.setOnClickListener { toggleRecording() }
         findViewById<View>(R.id.btnStopRecording).setOnClickListener { stopRecording() }
-        tvZoom.setOnClickListener { inkCanvas.resetZoom() }
+        tvZoom.setOnClickListener {
+            val z = inkCanvas.viewport.zoom
+            val nextZoom = when {
+                z < 1.15f -> 1.25f
+                z < 1.40f -> 1.50f
+                z < 1.85f -> 2.00f
+                else -> 1.00f
+            }
+            inkCanvas.setDiscreteZoom(nextZoom)
+        }
+        tvZoom.setOnLongClickListener {
+            inkCanvas.resetZoom()
+            true
+        }
 
         btnUndo.setOnClickListener { undo() }
         btnRedo.setOnClickListener { redo() }
@@ -492,6 +525,7 @@ class EditorActivity : AppCompatActivity() {
                     holdSnappedStroke = null
                 }
                 val pts = inkCanvas.toPage(points)
+                val isOnyxRaw = penInput is com.adnote.pen.OnyxPenInput
                 when (tools.tool) {
                     Tool.PEN, Tool.HIGHLIGHTER -> {
                         if (pts.isEmpty() || !startsOnPage(pts)) {
@@ -536,13 +570,17 @@ class EditorActivity : AppCompatActivity() {
                                 handler.postDelayed(job, 420L)
                             }
                         }
-                        inkCanvas.setTransientStroke(newStroke(pts))
+                        // 文石硬件直绘通道已经在屏幕底层渲染了实时线条，不重复触发 Android View 层重绘
+                        if (!isOnyxRaw) {
+                            inkCanvas.setTransientStroke(newStroke(pts))
+                        }
                     }
-                    Tool.SHAPE, Tool.TAPE ->
+                    Tool.SHAPE, Tool.TAPE -> if (!isOnyxRaw) {
                         inkCanvas.setTransientStroke(if (pts.isEmpty() || !startsOnPage(pts)) null else newStroke(pts))
+                    }
                     Tool.LASER -> inkCanvas.addLaserTrail(pts, tools.laserColor)
-                    Tool.ERASER -> liveErase(pts)
-                    Tool.LASSO -> inkCanvas.setLassoPath(pts)
+                    Tool.ERASER -> if (!isOnyxRaw) liveErase(pts)
+                    Tool.LASSO -> if (!isOnyxRaw) inkCanvas.setLassoPath(pts)
                     Tool.TEXT -> Unit
                 }
             }
@@ -692,7 +730,8 @@ class EditorActivity : AppCompatActivity() {
                 exitSelection()
             }
             applyPenInputStyle()
-            EinkRefresher.refreshFast(toolbar)
+            EinkRefresher.refreshUiControl(dockTop)
+            EinkRefresher.refreshUiControl(layoutPenPropertyBar)
         }
         app.saveToolState(tools)
     }
@@ -797,20 +836,14 @@ class EditorActivity : AppCompatActivity() {
                 showHint("激光教鞭 · 演示轨迹 1.6 秒自动消隐")
             }
         }
-        val isVertical = tools.dockPosition == DockPosition.LEFT || tools.dockPosition == DockPosition.RIGHT
-        if (!isVertical) {
-            // 当前笔型与粗细显示在色板后面，点一下打开设置（和再点一次工具按钮一样）
-            val width = String.format(Locale.US, "%.1f", tools.activeWidth)
-            if (tools.tool == Tool.PEN) showHint("${tools.penType.displayName} · 粗细 $width  ▾")
-            if (tools.tool == Tool.HIGHLIGHTER) showHint("粗细 $width  ▾")
-            if (tools.tool == Tool.SHAPE) showHint("${tools.penType.displayName} · 粗细 $width · 画完自动规整成直线、矩形、圆  ▾")
-            if (tools.tool == Tool.TEXT) showHint("点按页面添加文字")
-        }
+        val width = String.format(Locale.US, "%.1f", tools.activeWidth)
+        if (tools.tool == Tool.PEN) showHint("${tools.penType.displayName} · 粗细 $width  ▾")
+        if (tools.tool == Tool.HIGHLIGHTER) showHint("荧光笔 · 粗细 $width  ▾")
+        if (tools.tool == Tool.SHAPE) showHint("${tools.penType.displayName} · 粗细 $width · 自动几何规整  ▾")
+        if (tools.tool == Tool.TEXT) showHint("点按页面任意位置添加文字框")
     }
 
     private fun showHint(text: String) {
-        val isVertical = tools.dockPosition == DockPosition.LEFT || tools.dockPosition == DockPosition.RIGHT
-        if (isVertical) return
         tvToolHint.visibility = View.VISIBLE
         tvToolHint.text = text
     }
@@ -885,6 +918,8 @@ class EditorActivity : AppCompatActivity() {
         (layoutToolBarContent.parent as? ViewGroup)?.removeView(layoutToolBarContent)
 
         updateToolBarOrientation(isVertical)
+        layoutPenPropertyBar.visibility = View.VISIBLE
+        dividerPenProperty.visibility = View.VISIBLE
 
         when (dock) {
             DockPosition.TOP -> {
@@ -921,56 +956,51 @@ class EditorActivity : AppCompatActivity() {
     private fun updateToolBarOrientation(isVertical: Boolean) {
         val density = resources.displayMetrics.density
         layoutToolBarContent.orientation = if (isVertical) LinearLayout.VERTICAL else LinearLayout.HORIZONTAL
-        layoutPenPresets.orientation = if (isVertical) LinearLayout.VERTICAL else LinearLayout.HORIZONTAL
-        layoutQuickColors.orientation = if (isVertical) LinearLayout.VERTICAL else LinearLayout.HORIZONTAL
+        layoutPenPresets.orientation = LinearLayout.HORIZONTAL
+        layoutQuickColors.orientation = LinearLayout.HORIZONTAL
 
-        val dp24 = (24 * density).toInt()
-        val dp1 = (1 * density).toInt().coerceAtLeast(1)
+        val dp22 = (22 * density).toInt()
+        val dp1 = (1.5f * density).toInt().coerceAtLeast(1)
+        val dp4 = (4 * density).toInt()
         val dp6 = (6 * density).toInt()
-        val dp8 = (8 * density).toInt()
 
         val dividers = listOf<View?>(
             findViewById(R.id.dividerTool1),
             findViewById(R.id.dividerTool2),
-            findViewById(R.id.dividerTool3),
-            findViewById(R.id.dividerTool4),
         )
         dividers.forEach { v ->
             v?.layoutParams = if (isVertical) {
-                LinearLayout.LayoutParams(dp24, dp1).apply { setMargins(0, dp8, 0, dp8) }
+                LinearLayout.LayoutParams(dp22, dp1).apply { setMargins(0, dp6, 0, dp6) }
             } else {
-                LinearLayout.LayoutParams(dp1, dp24).apply { setMargins(dp8, 0, dp8, 0) }
+                LinearLayout.LayoutParams(dp1, dp22).apply { setMargins(dp6, 0, dp6, 0) }
             }
         }
 
+        val btnW = (35 * density).toInt()
+        val btnH = (34 * density).toInt()
         val toolBtnParams = if (isVertical) {
-            LinearLayout.LayoutParams((40 * density).toInt(), (36 * density).toInt()).apply {
-                setMargins(0, 0, 0, dp6)
+            LinearLayout.LayoutParams(btnW, btnH).apply {
+                setMargins(0, 0, 0, dp4)
             }
         } else {
-            LinearLayout.LayoutParams((40 * density).toInt(), (36 * density).toInt()).apply {
-                setMargins(0, 0, dp6, 0)
+            LinearLayout.LayoutParams(btnW, btnH).apply {
+                setMargins(0, 0, dp4, 0)
             }
         }
         toolButtons.values.forEach { it.layoutParams = toolBtnParams }
 
         btnUndo.layoutParams = toolBtnParams
-        btnRedo.layoutParams = LinearLayout.LayoutParams((40 * density).toInt(), (36 * density).toInt())
+        btnRedo.layoutParams = LinearLayout.LayoutParams(btnW, btnH)
 
         val extraActionBtns = listOf(btnRuler, btnInsertImage, findViewById<View>(R.id.btnLayers), btnRecord)
         extraActionBtns.forEach { it?.layoutParams = toolBtnParams }
 
-        val slotMargin = (4 * density).toInt()
-        val slotParamsWithMargin = if (isVertical) {
-            LinearLayout.LayoutParams((38 * density).toInt(), (36 * density).toInt()).apply {
-                setMargins(0, 0, 0, slotMargin)
-            }
-        } else {
-            LinearLayout.LayoutParams((38 * density).toInt(), (36 * density).toInt()).apply {
-                setMargins(0, 0, slotMargin, 0)
-            }
+        val slotW = (36 * density).toInt()
+        val slotH = (30 * density).toInt()
+        val slotParamsWithMargin = LinearLayout.LayoutParams(slotW, slotH).apply {
+            setMargins(0, 0, dp4, 0)
         }
-        val slotParamsLast = LinearLayout.LayoutParams((38 * density).toInt(), (36 * density).toInt())
+        val slotParamsLast = LinearLayout.LayoutParams(slotW, slotH)
         slotPreset1.layoutParams = slotParamsWithMargin
         slotPreset2.layoutParams = slotParamsWithMargin
         slotPreset3.layoutParams = slotParamsLast
@@ -979,20 +1009,21 @@ class EditorActivity : AppCompatActivity() {
     private fun showDockPositionDialog() {
         val options = DockPosition.entries.map { it.displayName }.toTypedArray()
         val currentIdx = DockPosition.entries.indexOf(tools.dockPosition)
-        AlertDialog.Builder(this)
-            .setTitle("工具栏停靠位置（避手模式）")
-            .setSingleChoiceItems(options, currentIdx) { dialog, which ->
-                val chosen = DockPosition.entries[which]
-                dialog.dismiss()
-                if (chosen != tools.dockPosition) {
-                    tools = tools.copy(dockPosition = chosen)
-                    applyDockPosition(chosen)
-                    app.saveToolState(tools)
-                    toast("已切换为：${chosen.displayName}")
+        showDialog(
+            AlertDialog.Builder(this)
+                .setTitle("工具栏停靠位置（避手模式）")
+                .setSingleChoiceItems(options, currentIdx) { dialog, which ->
+                    val chosen = DockPosition.entries[which]
+                    dialog.dismiss()
+                    if (chosen != tools.dockPosition) {
+                        tools = tools.copy(dockPosition = chosen)
+                        applyDockPosition(chosen)
+                        app.saveToolState(tools)
+                        toast("已切换为：${chosen.displayName}")
+                    }
                 }
-            }
-            .setNegativeButton("取消", null)
-            .show()
+                .setNegativeButton("取消", null)
+        )
     }
 
     private fun enterZenMode() {
@@ -1002,6 +1033,8 @@ class EditorActivity : AppCompatActivity() {
         dividerTop.visibility = View.GONE
         dockTop.visibility = View.GONE
         dividerToolTop.visibility = View.GONE
+        layoutPenPropertyBar.visibility = View.GONE
+        dividerPenProperty.visibility = View.GONE
         dockLeft.visibility = View.GONE
         dividerDockLeft.visibility = View.GONE
         dockRight.visibility = View.GONE
@@ -1016,6 +1049,8 @@ class EditorActivity : AppCompatActivity() {
         isZenMode = false
         toolbar.visibility = View.VISIBLE
         dividerTop.visibility = View.VISIBLE
+        layoutPenPropertyBar.visibility = View.VISIBLE
+        dividerPenProperty.visibility = View.VISIBLE
         btnExitZen.visibility = View.GONE
         applyDockPosition(tools.dockPosition)
         inkCanvas.post { updateExcludeRects() }
@@ -1076,11 +1111,11 @@ class EditorActivity : AppCompatActivity() {
         }
         if (!replaced && (tools.tool == Tool.PEN || tools.tool == Tool.HIGHLIGHTER) && app.shapeHold) {
             val d = com.adnote.template.TemplateLayout.density(inkCanvas.width)
-            val k = ShapeRecognizer.holdStartIndex(pts, radius = 28f * d)
+            val k = ShapeRecognizer.holdStartIndex(pts, holdMs = 450L, radius = 20f * d)
             val wallHoldMs = SystemClock.uptimeMillis() - lastPenMoveUptime
             if (k > 0) {
                 ShapeRecognizer.recognize(pts.subList(0, k + 1))?.let { pts = it.points; replaced = true }
-            } else if (wallHoldMs >= 400L || ShapeRecognizer.isStillAtEnd(pts, radius = 28f * d)) {
+            } else if (wallHoldMs >= 450L) {
                 ShapeRecognizer.recognize(pts)?.let { pts = it.points; replaced = true }
             }
         }
@@ -1145,8 +1180,11 @@ class EditorActivity : AppCompatActivity() {
     private fun toggleFilmstripBar(forceClose: Boolean = false) {
         val show = if (forceClose) false else layoutFilmstripBar.visibility != View.VISIBLE
         layoutFilmstripBar.visibility = if (show) View.VISIBLE else View.GONE
-        if (show) refreshFilmstripBar()
-        updateExcludeRects()
+        if (show) {
+            refreshFilmstripBar()
+            EinkRefresher.refreshUiControl(layoutFilmstripBar)
+        }
+        inkCanvas.post { updateExcludeRects() }
     }
 
     private fun refreshFilmstripBar() {
@@ -1928,8 +1966,21 @@ class EditorActivity : AppCompatActivity() {
                 }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
                 val playing = player.playingPath == rec.id
                 row.addView(Chips.text(this, if (playing) "停止" else "播放", playing) {
-                    if (playing) player.stop() else runCatching {
-                        player.play(repo.assetFile(note.id, rec.path), rec.id) { runOnUiThread { rebuild() } }
+                    if (playing) {
+                        player.stop()
+                        activePlaybackRecording = null
+                        inkCanvas.setPlaybackCutoff(null)
+                    } else runCatching {
+                        if (pageIdx >= 0 && pageIdx != currentPageIndex) goToPage(pageIdx)
+                        activePlaybackRecording = rec
+                        player.play(repo.assetFile(note.id, rec.path), rec.id) {
+                            runOnUiThread {
+                                activePlaybackRecording = null
+                                inkCanvas.setPlaybackCutoff(null)
+                                rebuild()
+                            }
+                        }
+                        handler.post(playbackSyncTicker)
                     }.onFailure { toast("无法播放：${it.message}") }
                     rebuild()
                 })
@@ -1939,6 +1990,8 @@ class EditorActivity : AppCompatActivity() {
                 })
                 row.addView(Chips.text(this, "删除", false) {
                     player.stop()
+                    activePlaybackRecording = null
+                    inkCanvas.setPlaybackCutoff(null)
                     repo.assetFile(note.id, rec.path).delete()
                     note = note.copy(recordings = note.recordings.filterNot { it.id == rec.id }, updatedAt = System.currentTimeMillis())
                     saveNow()
@@ -1950,9 +2003,16 @@ class EditorActivity : AppCompatActivity() {
         rebuild()
         dialog = showDialog(
             AlertDialog.Builder(this)
-                .setTitle("录音")
-                .setView(ScrollView(this).apply { addView(container) })
-                .setPositiveButton("关闭") { _, _ -> player.stop() }
+                .setTitle("录音（声墨同步回放）")
+                .setView(ScrollView(this).apply {
+                    overScrollMode = View.OVER_SCROLL_NEVER
+                    addView(container)
+                })
+                .setPositiveButton("关闭") { _, _ ->
+                    player.stop()
+                    activePlaybackRecording = null
+                    inkCanvas.setPlaybackCutoff(null)
+                }
         )
     }
 
@@ -2052,7 +2112,7 @@ class EditorActivity : AppCompatActivity() {
     private fun updateZoomLabel() {
         val vp = inkCanvas.viewport
         tvZoom.visibility = if (vp.isZoomed) View.VISIBLE else View.GONE
-        tvZoom.text = "${(vp.zoom * 100).roundToInt()}%  复位"
+        tvZoom.text = "🔍 ${(vp.zoom * 100).roundToInt()}% · 点按切档 / 长按复位"
         updateExcludeRects()
     }
 
@@ -2435,10 +2495,22 @@ class EditorActivity : AppCompatActivity() {
                 typeChips.addView(Chips.text(this, t.displayName, t == pen) { pen = t; refresh() })
             }
             colorChips.removeAllViews()
-            palette.forEach { s ->
-                colorChips.addView(Chips.color(this, s.hex, s.displayName, s.hex.equals(color, true)) {
-                    color = s.hex; refresh()
-                })
+            palette.chunked(5).forEachIndexed { rowIdx, rowPalette ->
+                val rowLayout = LinearLayout(this).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    layoutParams = LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT
+                    ).apply {
+                        if (rowIdx > 0) topMargin = (6 * resources.displayMetrics.density).toInt()
+                    }
+                }
+                rowPalette.forEach { s ->
+                    rowLayout.addView(Chips.color(this, s.hex, s.displayName, s.hex.equals(color, true)) {
+                        color = s.hex; refresh()
+                    })
+                }
+                colorChips.addView(rowLayout)
             }
             widthChips.removeAllViews()
             presets.forEach { w ->
@@ -2626,7 +2698,11 @@ class EditorActivity : AppCompatActivity() {
         refreshPenEnabled()
         builder.setOnDismissListener {
             overlayDepth = (overlayDepth - 1).coerceAtLeast(0)
-            refreshPenEnabled()
+            inkCanvas.doAfterNextDraw {
+                EinkRefresher.refreshCanvasPartial(inkCanvas)
+                refreshPenEnabled()
+            }
+            inkCanvas.invalidate()
         }
         return builder.show()
     }
@@ -2636,7 +2712,11 @@ class EditorActivity : AppCompatActivity() {
         refreshPenEnabled()
         popup.setOnDismissListener {
             overlayDepth = (overlayDepth - 1).coerceAtLeast(0)
-            refreshPenEnabled()
+            inkCanvas.doAfterNextDraw {
+                EinkRefresher.refreshCanvasPartial(inkCanvas)
+                refreshPenEnabled()
+            }
+            inkCanvas.invalidate()
         }
         popup.show()
     }
@@ -2705,13 +2785,17 @@ class EditorActivity : AppCompatActivity() {
         inkCanvas.post {
             val input = penInput ?: return@post
             val origin = IntArray(2).also { inkCanvas.getLocationOnScreen(it) }
-            val rects = listOf(layoutRecognized, layoutSelectionBar, layoutRecordingBar, tvZoom, btnExitZen)
+            val rects = listOf(layoutRecognized, layoutSelectionBar, layoutRecordingBar, tvZoom, btnExitZen, layoutFilmstripBar)
                 .filter { it.visibility == View.VISIBLE && it.width > 0 }
                 .map { v ->
                     val loc = IntArray(2).also { v.getLocationOnScreen(it) }
                     val l = loc[0] - origin[0]; val t = loc[1] - origin[1]
                     Rect(l, t, l + v.width, t + v.height)
                 }
+                .toMutableList()
+            inkCanvas.getMinimapScreenRect()?.let { mm ->
+                rects.add(Rect(mm.left.toInt(), mm.top.toInt(), mm.right.toInt(), mm.bottom.toInt()))
+            }
             val limit = inkCanvas.visiblePageRect()
             val region = limit to rects
             // 没变化就不动直绘层：每次暂停、恢复直绘在墨水屏上都可能多刷一次
@@ -2800,15 +2884,24 @@ class EditorActivity : AppCompatActivity() {
         }
     }
 
+    private val restoreToolHintRunnable = Runnable {
+        if (!isFinishing && ::tvToolHint.isInitialized) {
+            refreshQuickColors()
+            EinkRefresher.refreshUiControl(tvToolHint)
+        }
+    }
+
     /**
-     * 墨水屏防残影反馈：在墨水屏设备上，优先使用工具栏内嵌静态文字栏 [tvToolHint] 显示状态提示，
-     * 避免系统浮动 Toast 的淡入淡出动画在画布底部留下灰框残影或打断硬件直绘。
+     * 墨水屏防残影反馈：优先使用工具栏第二行内嵌静态状态胶囊 [tvToolHint] 显示提示，
+     * 彻底杜绝系统浮动 Toast 的淡入淡出动画在画布底部留下灰框残影或打断硬件直绘。
      */
     private fun toast(msg: String) {
-        if (isEink && ::tvToolHint.isInitialized && !isZenMode && tools.dockPosition == DockPosition.TOP) {
+        if (::tvToolHint.isInitialized && !isZenMode && tools.dockPosition == DockPosition.TOP) {
+            handler.removeCallbacks(restoreToolHintRunnable)
             tvToolHint.visibility = View.VISIBLE
             tvToolHint.text = "✓ $msg"
-            EinkRefresher.refreshFast(tvToolHint)
+            EinkRefresher.refreshUiControl(tvToolHint)
+            handler.postDelayed(restoreToolHintRunnable, 2200L)
             return
         }
         Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
@@ -2894,10 +2987,10 @@ class EditorActivity : AppCompatActivity() {
         /** 套索、橡皮路径提示的颜色。 */
         private const val GUIDE_COLOR = "#4B5563"
         private const val ERASER_PREVIEW_MS = 1500L
-        /** 画布画完后再等这么久恢复直绘，让渲染线程交付这一帧、墨水屏开始刷新。 */
-        private const val EPD_SETTLE_MS = 40L
+        /** 画布画完后再等这么久恢复直绘，让渲染线程交付这一帧、墨水屏控制器完成采样。 */
+        private const val EPD_SETTLE_MS = 110L
         /** 等不到画布重绘时最多暂停直绘这么久。 */
-        private const val REPAINT_TIMEOUT_MS = 300L
+        private const val REPAINT_TIMEOUT_MS = 380L
 
         private const val MENU_INSERT = 1
         private const val MENU_DUPLICATE = 2
